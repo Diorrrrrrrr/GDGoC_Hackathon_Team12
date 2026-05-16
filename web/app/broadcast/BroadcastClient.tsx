@@ -167,7 +167,7 @@ export default function BroadcastClient() {
     <div className="min-h-screen bg-[#0f1117] flex flex-col items-center justify-center gap-6 p-6">
       <div className="text-white text-xl font-bold">📡 방송 송출</div>
 
-      <div ref={videoRef} className="w-full max-w-md aspect-video bg-black rounded-2xl overflow-hidden border border-white/10" />
+      <div ref={videoRef} className="w-full max-w-2xl aspect-video bg-black rounded-2xl overflow-hidden border border-white/10" />
 
       {broadcasting && (
         <div className="w-full max-w-md bg-white/5 rounded-2xl p-4 flex flex-col gap-3">
