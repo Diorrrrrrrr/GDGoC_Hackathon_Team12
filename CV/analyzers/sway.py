@@ -61,7 +61,8 @@ class SwayAnalyzer:
 
         is_swaying = (
             amplitude >= self.MIN_AMPLITUDE and
-            0.5 <= dominant_freq <= 2.5
+            0.5 <= dominant_freq <= 2.5 and
+            crossing_rate >= 0.8  # NEW: Require rhythmic movement (at least ~1 cycle/sec)
         )
 
         return bool(is_swaying), {
