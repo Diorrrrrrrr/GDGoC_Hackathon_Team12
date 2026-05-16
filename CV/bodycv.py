@@ -164,30 +164,30 @@ with PoseLandmarker.create_from_options(options) as landmarker:
             draw_skeleton(img, result)
             symptoms, metrics = detect_symptoms_world(result.pose_world_landmarks[0])
 
-            # Overlay info
+            # Overlay info (2x bigger)
             if symptoms["normal"]:
-                cv2.putText(img, "NORMAL", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                cv2.putText(img, "NORMAL", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 255, 0), 4)
             else:
                 # 1. Stroke Pattern Alert (Priority)
                 if symptoms["stroke_pattern"]:
                     status_text = f"RISK: {symptoms['pattern_type'].replace('_', ' ').upper()}"
-                    cv2.putText(img, status_text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    y0 = 70
+                    cv2.putText(img, status_text, (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 255), 4)
+                    y0 = 120
                 else:
-                    cv2.putText(img, "SYMPTOM DETECTED", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                    y0 = 70
+                    cv2.putText(img, "SYMPTOM DETECTED", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (0, 0, 255), 4)
+                    y0 = 120
 
-                # 2. List all active individual symptoms
+                # 2. List all active individual symptoms (2x bigger)
                 active_symptoms = [k for k, v in symptoms.items() if v and k not in ["normal", "stroke_pattern", "pattern_type"]]
                 for i, label in enumerate(active_symptoms):
-                    cv2.putText(img, f"! {label.replace('_', ' ').upper()}", (10, y0 + i*30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    cv2.putText(img, f"! {label.replace('_', ' ').upper()}", (20, y0 + i*60),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 3)
             
-            # Show detail metrics for debugging (at the bottom)
+            # Show detail metrics for debugging (at the bottom, 2x bigger)
             if symptoms["stroke_pattern"]:
                 h_img = img.shape[0]
-                cv2.putText(img, f"Arrhythmia: {metrics.get('arrhythmia_score')}", (10, h_img - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
-                cv2.putText(img, f"Escalation: {metrics.get('slope')} m/min", (10, h_img - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                cv2.putText(img, f"Arrhythmia: {metrics.get('arrhythmia_score')}", (20, h_img - 80), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,165,255), 2)
+                cv2.putText(img, f"Escalation: {metrics.get('slope')} m/min", (20, h_img - 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0,165,255), 2)
 
             # Send payload
             now = time.time()
