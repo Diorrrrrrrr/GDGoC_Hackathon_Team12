@@ -11,10 +11,7 @@ export default function Header() {
           <div className="w-8 h-8 rounded-lg bg-[#1D6FD8] flex items-center justify-center shadow-sm">
             <Activity size={16} className="text-white" strokeWidth={2.5} />
           </div>
-          <div>
-            <span className="font-bold text-[#0F172A] text-base tracking-tight">CareWatch</span>
-            <span className="ml-1.5 text-xs text-[#64748B] font-medium">by Team 12</span>
-          </div>
+          <span className="font-bold text-[#0F172A] text-base tracking-tight">Strike Out</span>
         </Link>
 
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[#DCFCE7] rounded-full">
