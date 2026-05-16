@@ -118,13 +118,30 @@ function NotifCard({ n, unread }: { n: Notification; unread: boolean }) {
   );
 }
 
+const STORAGE_KEY = 'carewatch_read_notifs';
+
+function loadReadIds(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')); }
+  catch { return new Set(); }
+}
+
+function saveReadIds(ids: Set<string>) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids])); } catch {}
+}
+
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
 
+  useEffect(() => { setReadIds(loadReadIds()); }, []);
+
   function markRead(id: string) {
-    setReadIds(prev => new Set([...prev, id]));
+    setReadIds(prev => {
+      const next = new Set([...prev, id]);
+      saveReadIds(next);
+      return next;
+    });
   }
 
   useEffect(() => {
