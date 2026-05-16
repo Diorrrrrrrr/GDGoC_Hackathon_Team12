@@ -60,6 +60,7 @@ function calcEyeClosure(landmarks: { x: number; y: number }[]): number {
 
 export default function BroadcastClient() {
   const videoRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoElRef = useRef<HTMLVideoElement>(null);
   const [broadcasting, setBroadcasting] = useState(false);
   const [status, setStatus] = useState('대기 중');
@@ -105,6 +106,40 @@ export default function BroadcastClient() {
 
     const newMetrics = { ...colorMetrics, eye_closure };
     setMetrics(newMetrics);
+
+    // Canvas 오버레이
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.width = videoEl.videoWidth || 640;
+      canvas.height = videoEl.videoHeight || 480;
+      const ctx = canvas.getContext('2d')!;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const lines = [
+        { text: `Redness: ${newMetrics.redness.toFixed(3)}`, color: '#f87171' },
+        { text: `Paleness: ${newMetrics.paleness.toFixed(3)}`, color: '#ffffff' },
+        { text: `Eye Closure: ${newMetrics.eye_closure.toFixed(3)}`, color: '#fbbf24' },
+        { text: face_detected ? 'Face: DETECTED' : 'Face: NOT DETECTED', color: face_detected ? '#4ade80' : '#f87171' },
+      ];
+
+      ctx.font = 'bold 20px monospace';
+      ctx.lineWidth = 3;
+      lines.forEach(({ text, color }, i) => {
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.strokeText(text, 20, 36 + i * 32);
+        ctx.fillStyle = color;
+        ctx.fillText(text, 20, 36 + i * 32);
+      });
+
+      // REC 표시
+      ctx.beginPath();
+      ctx.arc(canvas.width - 30, 24, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#ef4444';
+      ctx.fill();
+      ctx.font = 'bold 16px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('REC', canvas.width - 60, 30);
+    }
 
     await supabase.from('face_metrics').insert({
       user_id: user.id,
@@ -167,7 +202,13 @@ export default function BroadcastClient() {
     <div className="min-h-screen bg-[#0f1117] flex flex-col items-center justify-center gap-6 p-6">
       <div className="text-white text-xl font-bold">📡 방송 송출</div>
 
-      <div ref={videoRef} className="w-full max-w-2xl aspect-video bg-black rounded-2xl overflow-hidden border border-white/10" />
+      <div className="relative w-full max-w-2xl aspect-video">
+        <div ref={videoRef} className="w-full h-full bg-black rounded-2xl overflow-hidden border border-white/10" />
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full rounded-2xl pointer-events-none"
+        />
+      </div>
 
       {broadcasting && (
         <div className="w-full max-w-md bg-white/5 rounded-2xl p-4 flex flex-col gap-3">
