@@ -43,7 +43,7 @@ options = PoseLandmarkerOptions(
     result_callback=on_result
 )
 
-# Initialize Sway Analyzer
+# Initialize Sway Analyzer (High Fidelity)
 sway_analyzer = SwayAnalyzer(fps=30)
 
 # ── Symptom detection ─────────────────────────────────────────────
@@ -53,8 +53,8 @@ def detect_symptoms_world(world_landmarks):
     L_HIP, R_HIP           = 23, 24
     NOSE                   = 0
 
-    # 1. SWAY ANALYSIS (Instant + Pattern)
-    is_swaying_now, pattern_alert, sway_metrics = sway_analyzer.update_coordinates(lm)
+    # 1. SWAY ANALYSIS (Instant + Advanced Patterns)
+    is_swaying_now, patterns, sway_metrics = sway_analyzer.update_coordinates(lm)
 
     # 2. BODY TILT (Lying down/leaning)
     dy = (lm[L_HIP].y + lm[R_HIP].y)/2 - (lm[L_SHOULDER].y + lm[R_SHOULDER].y)/2
@@ -68,39 +68,36 @@ def detect_symptoms_world(world_landmarks):
         "body_angle_deg":  round(body_angle_deg,  2),
         "shoulder_tilt_m": round(shoulder_tilt_m, 4),
         **sway_metrics,
+        **patterns
     }
 
     symptoms = {
-        "normal":        bool(not is_swaying_now and not pattern_alert and shoulder_tilt_m < 0.08 and body_angle_deg < 15),
-        "swaying":       bool(is_swaying_now),
-        "stroke_pattern": bool(pattern_alert), # NEW: Pattern match
-        "lying_down":    bool(body_angle_deg > 60),
-        "leaning":       bool(shoulder_tilt_m > 0.08),
-        "possible_fall": bool(body_angle_deg > 45 and lm[NOSE].y > 0.3),
+        "normal":         bool(not is_swaying_now and not patterns['stroke_risk'] and shoulder_tilt_m < 0.08 and body_angle_deg < 15),
+        "swaying":        bool(is_swaying_now),
+        "stroke_pattern": bool(patterns['stroke_risk']),
+        "pattern_type":   patterns['type'],
+        "lying_down":     bool(body_angle_deg > 60),
+        "leaning":        bool(shoulder_tilt_m > 0.08),
+        "possible_fall":  bool(body_angle_deg > 45 and lm[NOSE].y > 0.3),
     }
 
     return symptoms, metrics
 
-def build_payload(symptoms):
+def build_payload(symptoms, metrics):
     from datetime import datetime, timezone, timedelta
     tz_offset = timezone(timedelta(hours=9))
     current_time_str = datetime.now(tz_offset).isoformat(timespec='seconds')
 
-    active_count = sum(1 for k, v in symptoms.items() if v and k != "normal")
+    active_count = sum(1 for k, v in symptoms.items() if v and k in ["swaying", "lying_down", "leaning", "possible_fall"])
 
-    # High severity for pattern matches or falls
-    if symptoms["stroke_pattern"] or symptoms["possible_fall"] or symptoms["lying_down"]:
+    if symptoms["stroke_pattern"]:
         overall_severity = "high"
-        risk_score       = 0.95
-        alert_type       = "CRITICAL_PATTERN_DETECTED" if symptoms["stroke_pattern"] else "possible_fall"
-    elif active_count >= 2:
+        risk_score       = 0.98
+        alert_type       = f"NEURO_PATTERN_{symptoms['pattern_type'].upper()}"
+    elif symptoms["possible_fall"] or symptoms["lying_down"]:
         overall_severity = "high"
-        risk_score       = 0.76
-        alert_type       = "multiple_symptoms"
-    elif active_count == 1:
-        overall_severity = "medium"
-        risk_score       = 0.45
-        alert_type       = "warning"
+        risk_score       = 0.90
+        alert_type       = "possible_fall"
     else:
         overall_severity = "low"
         risk_score       = 0.10
@@ -112,7 +109,8 @@ def build_payload(symptoms):
         "alert_type":       alert_type,
         "overall_severity": overall_severity,
         "risk_score":       risk_score,
-        "features":         symptoms
+        "features":         symptoms,
+        "raw_metrics":      metrics
     }
 
 # ── Main loop ─────────────────────────────────────────────────────
@@ -139,22 +137,29 @@ with PoseLandmarker.create_from_options(options) as landmarker:
 
             # Overlay info
             color = (0, 255, 0) if symptoms["normal"] else (0, 0, 255)
-            status_text = "NORMAL" if symptoms["normal"] else "SYMPTOM DETECTED"
+            status_text = "NORMAL"
             if symptoms["stroke_pattern"]:
-                status_text = "!!! STROKE PATTERN !!!"
+                status_text = f"RISK: {symptoms['pattern_type'].replace('_', ' ').upper()}"
                 color = (0, 0, 255)
+            elif not symptoms["normal"]:
+                status_text = "SYMPTOM DETECTED"
 
-            cv2.putText(img, status_text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+            cv2.putText(img, status_text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
             
+            # Show detail metrics for debugging
+            if symptoms["stroke_pattern"]:
+                cv2.putText(img, f"Arrhythmia: {metrics.get('arrhythmia_score')}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                cv2.putText(img, f"Escalation: {metrics.get('slope')} m/min", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+
             # Send payload
             now = time.time()
             if now - last_sent >= send_interval:
                 try:
-                    requests.post(BACKEND_URL, json=build_payload(symptoms), timeout=0.5)
+                    requests.post(BACKEND_URL, json=build_payload(symptoms, metrics), timeout=0.5)
                 except: pass
                 last_sent = now
 
-        cv2.imshow("Stroke Detection Monitor", img)
+        cv2.imshow("High-Fidelity Stroke Monitor", img)
         if cv2.waitKey(1) == ord('q'): break
 
 cap.release()

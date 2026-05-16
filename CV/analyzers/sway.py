@@ -3,28 +3,28 @@ import numpy as np
 import time
 
 class SwayAnalyzer:
-    def __init__(self, fps=30, signal_window_sec=3, pattern_window_sec=30):
-        # ── Signal Processing Properties (Short-term) ──
+    def __init__(self, fps=30, signal_window_sec=3, pattern_window_sec=60):
         self.fps = fps
+        
+        # ── Signal Processing Buffer (Short-term: 3s) ──
         self.sway_window = int(fps * signal_window_sec)
         self.sway_history = collections.deque(maxlen=self.sway_window)
         
-        # ── Pattern Recognition Properties (Long-term) ──
-        # Tracks the status of 'is_swaying' over a longer period (e.g., 30 seconds)
+        # ── Pattern Recognition Buffer (Long-term: 60s) ──
         self.pattern_window = int(fps * pattern_window_sec)
-        self.detection_history = collections.deque(maxlen=self.pattern_window)
+        # We store the metrics of each detection to analyze trends
+        self.metrics_history = collections.deque(maxlen=self.pattern_window)
         
-        # Thresholds for stroke-like pattern detection
-        self.MIN_PATTERN_DENSITY = 0.3  # If swaying is detected 30% of the time in the window
-        self.MIN_DURATION_CONFIRM = 5.0 # Minimum seconds of cumulative swaying to trigger alert
+        # ── Thresholds ──
+        self.MIN_AMPLITUDE = 0.04
+        self.ARRHYTHMIA_THRESHOLD = 0.4  # Coefficient of variation for frequency
+        self.ESCALATION_THRESHOLD = 0.02 # Meters per minute increase
 
     def update_coordinates(self, landmarks):
-        """Processes new coordinates and returns current status and long-term pattern alert."""
+        """Processes new coordinates and identifies complex stroke-related patterns."""
         if not landmarks:
             return False, False, {}
 
-        # Calculate horizontal displacement between shoulders and hips
-        # landmarks[11] = L_SHOULDER, [12] = R_SHOULDER, [23] = L_HIP, [24] = R_HIP
         try:
             shoulder_mid_x = (landmarks[11].x + landmarks[12].x) / 2
             hip_mid_x      = (landmarks[23].x + landmarks[24].x) / 2
@@ -33,63 +33,82 @@ class SwayAnalyzer:
             return False, False, {}
 
         # 1. Instantaneous Analysis
-        is_swaying_now, metrics = self._detect_instantaneous_sway()
+        is_swaying_now, current_metrics = self._detect_instantaneous_sway()
         
-        # 2. Accumulate for Pattern Recognition
-        self.detection_history.append(1 if is_swaying_now else 0)
+        # 2. Store metrics for trend analysis (even if not currently swaying, we store 0s)
+        self.metrics_history.append(current_metrics if is_swaying_now else None)
         
-        # 3. Pattern Alert Logic
-        pattern_alert = self._analyze_temporal_pattern()
+        # 3. Complex Pattern Analysis
+        patterns = self._analyze_complex_patterns()
         
-        return is_swaying_now, pattern_alert, metrics
+        return is_swaying_now, patterns, current_metrics
 
     def _detect_instantaneous_sway(self):
         if len(self.sway_history) < self.sway_window // 2:
             return False, {}
 
         signal = np.array(self.sway_history)
-        signal = signal - np.mean(signal)  # Detrend
+        signal = signal - np.mean(signal)
 
-        amplitude_m = float(np.max(signal) - np.min(signal))
+        amplitude = float(np.max(signal) - np.min(signal))
         zero_crossings = np.where(np.diff(np.sign(signal)))[0]
         crossing_rate = len(zero_crossings) / (len(signal) / float(self.fps))
         
-        # Frequency Analysis
         fft_vals = np.abs(np.fft.rfft(signal))
         freqs = np.fft.rfftfreq(len(signal), d=1.0/self.fps)
-        fft_vals[0] = 0  # Suppress DC
+        fft_vals[0] = 0
         dominant_freq = float(freqs[np.argmax(fft_vals)])
 
-        # Criteria for "Swaying"
         is_swaying = (
-            amplitude_m >= 0.05 and
-            0.8 <= crossing_rate <= 4.0 and
-            0.3 <= dominant_freq <= 2.0
+            amplitude >= self.MIN_AMPLITUDE and
+            0.5 <= dominant_freq <= 2.5
         )
 
         return bool(is_swaying), {
-            "sway_amplitude_m": round(amplitude_m, 4),
-            "sway_freq_hz": round(dominant_freq, 3),
-            "sway_crossing_rate": round(float(crossing_rate), 3),
+            "amp": amplitude,
+            "freq": dominant_freq,
+            "rate": crossing_rate,
+            "time": time.time()
         }
 
-    def _analyze_temporal_pattern(self):
+    def _analyze_complex_patterns(self):
         """
-        Analyzes the sequence of detections to identify persistent or recurring 
-        swaying patterns that match clinical stroke symptoms.
+        Looks for specific neurological signatures: 
+        1. Arrhythmia (unstable rhythm)
+        2. Escalation (worsening balance)
         """
-        if len(self.detection_history) < self.fps * 10: # Need at least 10s of data
-            return False
-
-        # Calculate density (percentage of time swaying was detected in the window)
-        sway_density = sum(self.detection_history) / len(self.detection_history)
+        valid_history = [m for m in self.metrics_history if m is not None]
         
-        # Calculate cumulative duration in seconds
-        total_sway_time = sum(self.detection_history) / float(self.fps)
+        if len(valid_history) < self.fps * 5: # Need 5s of active swaying to identify a pattern
+            return {"stroke_risk": False, "type": "none"}
 
-        # Trigger alert if the pattern is persistent (density) or sustained (duration)
-        # Stroke-related ataxia/sway is often continuous rather than a single trip.
-        if sway_density >= self.MIN_PATTERN_DENSITY and total_sway_time >= self.MIN_DURATION_CONFIRM:
-            return True
-            
-        return False
+        # ── Pattern A: Arrhythmia (Neurological instability) ──
+        # We check if the frequency of swaying is jittery/irregular
+        freqs = [m['freq'] for m in valid_history]
+        freq_std = np.std(freqs)
+        freq_mean = np.mean(freqs)
+        arrhythmia_score = freq_std / freq_mean if freq_mean > 0 else 0
+        
+        # ── Pattern B: Amplitude Escalation (Fatigue/Losing control) ──
+        # We check if the sway amplitude is trending upwards
+        amps = [m['amp'] for m in valid_history]
+        x = np.arange(len(amps))
+        slope, _ = np.polyfit(x, amps, 1) if len(amps) > 1 else (0, 0)
+        
+        is_arrhythmic = arrhythmia_score > self.ARRHYTHMIA_THRESHOLD
+        is_escalating = slope > (self.ESCALATION_THRESHOLD / self.pattern_window)
+
+        # Result Logic
+        risk_detected = is_arrhythmic or is_escalating
+        
+        pattern_type = "stable_sway"
+        if is_arrhythmic and is_escalating: pattern_type = "critical_ataxia"
+        elif is_arrhythmic: pattern_type = "arrhythmic_ataxia"
+        elif is_escalating: pattern_type = "escalating_instability"
+
+        return {
+            "stroke_risk": bool(risk_detected),
+            "type": pattern_type,
+            "arrhythmia_score": round(float(arrhythmia_score), 3),
+            "slope": round(float(slope * self.fps * 60), 4) # Meters per minute increase
+        }
