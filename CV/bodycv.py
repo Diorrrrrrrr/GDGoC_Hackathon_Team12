@@ -21,7 +21,6 @@ if not os.path.exists(MODEL_PATH):
         print(f"Error downloading model: {e}")
         exit(1)
 
-# ── Mediapipe Setup ──────────────────────────────────────────────
 BaseOptions           = mp.tasks.BaseOptions
 PoseLandmarker        = mp.tasks.vision.PoseLandmarker
 PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
@@ -43,10 +42,31 @@ options = PoseLandmarkerOptions(
     result_callback=on_result
 )
 
-# Initialize Sway Analyzer (High Fidelity)
+# ── Pose connections ──────────────────────────────────────────────
+POSE_CONNECTIONS = [
+    (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
+    (11, 23), (12, 24), (23, 24),
+    (23, 25), (25, 27), (24, 26), (26, 28),
+    (27, 31), (28, 32), (27, 29), (28, 30)
+]
+
+def draw_skeleton(img, result):
+    h, w, _ = img.shape
+    for pose_lms in result.pose_landmarks:
+        points = {}
+        for idx, lm in enumerate(pose_lms):
+            if lm.visibility > 0.5:
+                points[idx] = (int(lm.x * w), int(lm.y * h))
+        for start_idx, end_idx in POSE_CONNECTIONS:
+            if start_idx in points and end_idx in points:
+                cv2.line(img, points[start_idx], points[end_idx], (255, 0, 0), 2)
+        for idx, pt in points.items():
+            cv2.circle(img, pt, 4, (0, 255, 0), -1)
+
+# sway analyser
 sway_analyzer = SwayAnalyzer(fps=30)
 
-# ── Symptom detection ─────────────────────────────────────────────
+# symptom detection 
 def detect_symptoms_world(world_landmarks):
     lm = world_landmarks
     L_SHOULDER, R_SHOULDER = 11, 12
@@ -113,12 +133,12 @@ def build_payload(symptoms, metrics):
         "raw_metrics":      metrics
     }
 
-# ── Main loop ─────────────────────────────────────────────────────
+# main loop
 BACKEND_URL   = "http://localhost:8000/analyze"
 send_interval = 0.2
 last_sent     = 0
 
-cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
 if not cap.isOpened():
     cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
 
@@ -133,23 +153,33 @@ with PoseLandmarker.create_from_options(options) as landmarker:
 
         result = latest_result["result"]
         if result and result.pose_landmarks:
+            draw_skeleton(img, result)
             symptoms, metrics = detect_symptoms_world(result.pose_world_landmarks[0])
 
             # Overlay info
-            color = (0, 255, 0) if symptoms["normal"] else (0, 0, 255)
-            status_text = "NORMAL"
-            if symptoms["stroke_pattern"]:
-                status_text = f"RISK: {symptoms['pattern_type'].replace('_', ' ').upper()}"
-                color = (0, 0, 255)
-            elif not symptoms["normal"]:
-                status_text = "SYMPTOM DETECTED"
+            if symptoms["normal"]:
+                cv2.putText(img, "NORMAL", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            else:
+                # 1. Stroke Pattern Alert (Priority)
+                if symptoms["stroke_pattern"]:
+                    status_text = f"RISK: {symptoms['pattern_type'].replace('_', ' ').upper()}"
+                    cv2.putText(img, status_text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    y0 = 70
+                else:
+                    cv2.putText(img, "SYMPTOM DETECTED", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    y0 = 70
 
-            cv2.putText(img, status_text, (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                # 2. List all active individual symptoms
+                active_symptoms = [k for k, v in symptoms.items() if v and k not in ["normal", "stroke_pattern", "pattern_type"]]
+                for i, label in enumerate(active_symptoms):
+                    cv2.putText(img, f"! {label.replace('_', ' ').upper()}", (10, y0 + i*30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
             
-            # Show detail metrics for debugging
+            # Show detail metrics for debugging (at the bottom)
             if symptoms["stroke_pattern"]:
-                cv2.putText(img, f"Arrhythmia: {metrics.get('arrhythmia_score')}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
-                cv2.putText(img, f"Escalation: {metrics.get('slope')} m/min", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                h_img = img.shape[0]
+                cv2.putText(img, f"Arrhythmia: {metrics.get('arrhythmia_score')}", (10, h_img - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
+                cv2.putText(img, f"Escalation: {metrics.get('slope')} m/min", (10, h_img - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,165,255), 1)
 
             # Send payload
             now = time.time()
