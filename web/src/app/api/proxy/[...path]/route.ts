@@ -11,6 +11,10 @@ const HOP_BY_HOP = new Set([
   "transfer-encoding",
   "upgrade",
   "content-length",
+  // Node fetch auto-decompresses the upstream body, so the original
+  // content-encoding no longer matches the bytes we forward. Leaving
+  // it on triggers "Decoding failed" in the browser.
+  "content-encoding",
 ]);
 
 async function handle(
