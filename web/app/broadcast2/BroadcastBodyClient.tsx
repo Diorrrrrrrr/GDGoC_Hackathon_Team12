@@ -526,6 +526,7 @@ export default function BroadcastBodyClient() {
   const lastHeartbeatRef = useRef(0);
   const userIdRef = useRef<string | null>(null);
   const supabaseRef = useRef(createClient());
+  const broadcastRef = useRef(createClient().channel('body-state'));
 
   const [broadcasting, setBroadcasting] = useState(false);
   const [status, setStatus] = useState('대기 중');
@@ -578,6 +579,7 @@ export default function BroadcastBodyClient() {
     video.srcObject = stream;
     video.muted = true;
     await video.play();
+    broadcastRef.current.subscribe();
 
     // RAF loop: draw webcam → canvas, run detection
     function loop(timestamp: number) {
@@ -612,6 +614,10 @@ export default function BroadcastBodyClient() {
         const now = Date.now() / 1000;
         if (det.state !== lastStateRef.current) {
           postEvent(det.state, det.features, 'transition');
+          broadcastRef.current.send({
+            type: 'broadcast', event: 'body-state',
+            payload: { state: det.state, severity: SEVERITY[det.state], risk_score: RISK_SCORE[det.state] },
+          });
           lastStateRef.current = det.state;
           lastFeaturesRef.current = det.features;
           lastHeartbeatRef.current = now;

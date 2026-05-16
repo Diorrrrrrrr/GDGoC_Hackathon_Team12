@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Phone, X } from 'lucide-react';
 
 const AgoraViewer = dynamic(() => import('@/components/AgoraViewer'), { ssr: false });
+const AgoraBodyViewer = dynamic(() => import('@/components/AgoraBodyViewer'), { ssr: false });
 
 const camTheme: Record<StatusLevel, {
   gradient: string; glow: string; scanColor: string;
@@ -78,7 +79,7 @@ function SosBanner({ onDismiss }: { onDismiss: () => void }) {
   );
 }
 
-function CamCard({ title, subtitle, level, live }: { title: string; subtitle: string; level: StatusLevel; live?: boolean }) {
+function CamCard({ title, subtitle, level, live, body }: { title: string; subtitle: string; level: StatusLevel; live?: boolean; body?: boolean }) {
   const th = camTheme[level];
   return (
     <div className={`relative rounded-2xl overflow-hidden bg-gradient-to-br ${th.gradient} ${th.glow} transition-all duration-700`}>
@@ -96,7 +97,9 @@ function CamCard({ title, subtitle, level, live }: { title: string; subtitle: st
         </div>
 
         <div className="relative rounded-xl overflow-hidden aspect-video bg-black/40">
-          {live ? (
+          {live && body ? (
+            <AgoraBodyViewer />
+          ) : live ? (
             <AgoraViewer />
           ) : (
             <>
@@ -150,13 +153,27 @@ function CamCard({ title, subtitle, level, live }: { title: string; subtitle: st
 
 export default function MonitorPage() {
   const [faceLevel, setFaceLevel] = useState<StatusLevel>('normal');
+  const [bodyLevel, setBodyLevel] = useState<StatusLevel>('normal');
   const [showSos, setShowSos] = useState(false);
   const dangerStartRef = useRef<number | null>(null);
   const sosDismissedRef = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
+    const bodyChannel = supabase
+      .channel('body-state')
+      .on('broadcast', { event: 'body-state' }, (payload) => {
+        const severity = payload.payload?.severity as string;
+        if (severity === 'high') setBodyLevel('danger');
+        else if (severity === 'medium') setBodyLevel('warning');
+        else setBodyLevel('normal');
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(bodyChannel); };
+  }, []);
 
+  useEffect(() => {
+    const supabase = createClient();
     supabase
       .from('face_metrics')
       .select('redness, paleness, eye_closure')
@@ -201,7 +218,7 @@ export default function MonitorPage() {
     <>
       {showSos && <SosBanner onDismiss={() => { setShowSos(false); sosDismissedRef.current = true; }} />}
       <div className="fade-in flex flex-col gap-4">
-        <CamCard title="Body Camera" subtitle="신체 모니터링" level="normal" />
+        <CamCard title="Body Camera" subtitle="신체 모니터링" level={bodyLevel} live body />
         <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live />
       </div>
     </>
