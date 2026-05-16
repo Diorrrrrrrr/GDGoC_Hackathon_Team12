@@ -92,7 +92,6 @@ def detect_symptoms_world(world_landmarks):
     }
 
     symptoms = {
-        "normal":         bool(not is_swaying_now and not patterns['stroke_risk'] and shoulder_tilt_m < 0.08 and body_angle_deg < 15),
         "swaying":        bool(is_swaying_now),
         "stroke_pattern": bool(patterns['stroke_risk']),
         "pattern_type":   patterns['type'],
@@ -100,6 +99,15 @@ def detect_symptoms_world(world_landmarks):
         "leaning":        bool(shoulder_tilt_m > 0.08),
         "possible_fall":  bool(body_angle_deg > 45 and lm[NOSE].y > 0.3),
     }
+    
+    # Normal is True if none of the above specific symptoms are active
+    symptoms["normal"] = not any([
+        symptoms["swaying"], 
+        symptoms["stroke_pattern"], 
+        symptoms["lying_down"], 
+        symptoms["leaning"], 
+        symptoms["possible_fall"]
+    ])
 
     return symptoms, metrics
 
