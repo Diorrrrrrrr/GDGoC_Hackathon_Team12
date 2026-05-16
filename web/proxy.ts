@@ -1,32 +1,42 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from '@supabase/ssr';
+import { NextResponse, type NextRequest } from 'next/server';
 
-import { TOKEN_COOKIE } from "@/lib/auth/cookies";
+export async function proxy(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({ request });
 
-const PUBLIC_PATHS = new Set(["/", "/login", "/signup"]);
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => request.cookies.getAll(),
+        setAll: (cookiesToSet) => {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          supabaseResponse = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options),
+          );
+        },
+      },
+    },
+  );
 
-export function proxy(request: NextRequest) {
-  const path = request.nextUrl.pathname;
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (path.startsWith("/api/")) {
-    return NextResponse.next();
+  const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
+                     request.nextUrl.pathname.startsWith('/signup');
+
+  if (!user && !isAuthPage) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (PUBLIC_PATHS.has(path)) {
-    return NextResponse.next();
+  if (user && isAuthPage) {
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
-  const token = request.cookies.get(TOKEN_COOKIE)?.value;
-  if (!token) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
-  }
-
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };
