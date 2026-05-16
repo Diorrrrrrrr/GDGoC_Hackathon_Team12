@@ -1,12 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { PhoneCall, RefreshCw, User, Phone, QrCode, CheckCircle, LogOut } from 'lucide-react';
+import { PhoneCall, RefreshCw, User, Phone, QrCode, CheckCircle, LogOut, Camera } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { createClient } from '@/lib/supabase/client';
-
-const PROFILE_IMG = 'https://images.unsplash.com/photo-1634089916298-9fa27180526c?w=300&h=300&fit=crop&crop=face&q=80';
 
 type Step = 'register' | 'qr';
 
@@ -14,15 +12,60 @@ interface ProfileForm {
   name: string;
   phone: string;
   relation: string;
+  avatar_url: string;
 }
 
 const RELATION_OPTIONS = ['어머니', '아버지', '할머니', '할아버지', '기타'];
 
 export default function SettingsPage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>('register');
-  const [form, setForm] = useState<ProfileForm>({ name: '', phone: '', relation: '' });
+  const [form, setForm] = useState<ProfileForm>({ name: '', phone: '', relation: '', avatar_url: '' });
   const [saved, setSaved] = useState<ProfileForm | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    async function loadContact() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('monitored_contacts')
+        .select('name, phone, relation, avatar_url')
+        .eq('user_id', user.id)
+        .single();
+
+      if (data) {
+        setForm({ name: data.name, phone: data.phone, relation: data.relation, avatar_url: data.avatar_url ?? '' });
+        setSaved({ name: data.name, phone: data.phone, relation: data.relation, avatar_url: data.avatar_url ?? '' });
+        setStep('qr');
+      }
+    }
+    loadContact();
+  }, []);
+
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const ext = file.name.split('.').pop();
+    const path = `${user.id}/avatar.${ext}`;
+
+    const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+    if (!error) {
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+      setForm(f => ({ ...f, avatar_url: publicUrl }));
+    }
+    setUploading(false);
+  }
 
   async function handleLogout() {
     const supabase = createClient();
@@ -31,15 +74,28 @@ export default function SettingsPage() {
     router.refresh();
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSaving(true);
+
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from('monitored_contacts')
+      .upsert({ user_id: user.id, ...form, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+
     setSaved(form);
     setStep('qr');
+    setSaving(false);
   }
 
   const qrValue = saved
     ? JSON.stringify({ name: saved.name, phone: saved.phone, relation: saved.relation, ts: Date.now() })
     : '';
+
+  const avatarSrc = form.avatar_url || null;
 
   return (
     <div className="fade-in flex flex-col gap-4 max-w-md mx-auto">
@@ -66,6 +122,29 @@ export default function SettingsPage() {
             <p className="text-xs text-[#94A3B8] mb-5">상대방을 등록해주세요. 등록 후 QR 코드로 연동할 수 있습니다.</p>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+
+              {/* 이미지 업로드 */}
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative w-20 h-20 rounded-full bg-[#F1F5F9] border-2 border-dashed border-[#CBD5E1] flex items-center justify-center overflow-hidden hover:border-[#1D6FD8] transition-colors"
+                >
+                  {avatarSrc ? (
+                    <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera size={24} className="text-[#94A3B8]" />
+                  )}
+                  {uploading && (
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </button>
+                <span className="text-xs text-[#94A3B8]">사진 선택 (선택)</span>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              </div>
+
               <div>
                 <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">이름</label>
                 <input
@@ -115,10 +194,11 @@ export default function SettingsPage() {
 
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1D6FD8] text-white text-sm font-bold hover:bg-[#1a63c4] active:scale-95 transition-all shadow-md shadow-[#1D6FD8]/25 mt-1"
+                disabled={saving || uploading}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1D6FD8] text-white text-sm font-bold hover:bg-[#1a63c4] active:scale-95 transition-all shadow-md shadow-[#1D6FD8]/25 mt-1 disabled:opacity-60"
               >
                 <QrCode size={16} strokeWidth={2.5} />
-                등록하고 QR 코드 생성
+                {saving ? '저장 중...' : '등록하고 QR 코드 생성'}
               </button>
             </form>
           </div>
@@ -142,7 +222,13 @@ export default function SettingsPage() {
             <div className="px-5 pb-5 pt-4">
               <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F8FAFC] border border-[#F1F5F9] mb-4">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#22C55E] to-[#86efac] p-[2px] shadow">
-                  <img src={PROFILE_IMG} alt="" className="w-full h-full rounded-full object-cover" />
+                  {saved?.avatar_url ? (
+                    <img src={saved.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-[#86efac] flex items-center justify-center">
+                      <User size={20} className="text-white" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1">
                   <p className="font-bold text-[#0F172A] text-sm">{saved?.name}</p>
@@ -189,7 +275,6 @@ export default function SettingsPage() {
         </>
       )}
 
-      {/* 로그아웃 */}
       <button
         onClick={handleLogout}
         className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-[#FCA5A5] text-[#EF4444] text-sm font-bold hover:bg-[#FEE2E2] active:scale-95 transition-all"
