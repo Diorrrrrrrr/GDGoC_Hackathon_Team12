@@ -62,9 +62,13 @@ export default function CaregiverScanPage() {
           <div className="rounded border overflow-hidden aspect-square bg-black">
             <Scanner
               onScan={handleScan}
-              onError={(e) =>
-                setError(e instanceof Error ? e.message : String(e))
-              }
+              onError={(e) => {
+                const msg = e instanceof Error ? e.message : String(e);
+                // The library emits "Decoding failed" each frame that
+                // doesn't contain a QR. Treat it as noise.
+                if (/decod/i.test(msg)) return;
+                setError(msg);
+              }}
               paused={paused}
               constraints={{ facingMode: "environment" }}
             />
