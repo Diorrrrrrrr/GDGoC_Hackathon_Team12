@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PhoneCall, RefreshCw, User, Phone, QrCode, CheckCircle, LogOut } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -23,6 +23,28 @@ export default function SettingsPage() {
   const [step, setStep] = useState<Step>('register');
   const [form, setForm] = useState<ProfileForm>({ name: '', phone: '', relation: '' });
   const [saved, setSaved] = useState<ProfileForm | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    async function loadContact() {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from('monitored_contacts')
+        .select('name, phone, relation')
+        .eq('user_id', user.id)
+        .single();
+
+      if (data) {
+        setForm(data);
+        setSaved(data);
+        setStep('qr');
+      }
+    }
+    loadContact();
+  }, []);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -31,10 +53,21 @@ export default function SettingsPage() {
     router.refresh();
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setSaving(true);
+
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from('monitored_contacts')
+      .upsert({ user_id: user.id, ...form, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+
     setSaved(form);
     setStep('qr');
+    setSaving(false);
   }
 
   const qrValue = saved
@@ -115,10 +148,11 @@ export default function SettingsPage() {
 
               <button
                 type="submit"
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1D6FD8] text-white text-sm font-bold hover:bg-[#1a63c4] active:scale-95 transition-all shadow-md shadow-[#1D6FD8]/25 mt-1"
+                disabled={saving}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1D6FD8] text-white text-sm font-bold hover:bg-[#1a63c4] active:scale-95 transition-all shadow-md shadow-[#1D6FD8]/25 mt-1 disabled:opacity-60"
               >
                 <QrCode size={16} strokeWidth={2.5} />
-                등록하고 QR 코드 생성
+                {saving ? '저장 중...' : '등록하고 QR 코드 생성'}
               </button>
             </form>
           </div>
@@ -189,7 +223,6 @@ export default function SettingsPage() {
         </>
       )}
 
-      {/* 로그아웃 */}
       <button
         onClick={handleLogout}
         className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-[#FCA5A5] text-[#EF4444] text-sm font-bold hover:bg-[#FEE2E2] active:scale-95 transition-all"
