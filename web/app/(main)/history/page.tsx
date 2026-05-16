@@ -7,21 +7,23 @@ import {
 } from 'recharts';
 import { Activity, Shield, AlertTriangle, XOctagon, Clock, Wifi } from 'lucide-react';
 import type { StatusLevel } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
 
-/* ── types ── */
 interface DataPoint {
-  t: number;        // seconds ago (0 = now, 30 = 30s ago)
-  label: string;    // "30s", "25s", ... "0s"
-  body: number;     // 1=normal 2=warning 3=danger
+  t: number;
+  label: string;
   face: number;
+  redness: number;
+  paleness: number;
+  eye_closure: number;
 }
 
-/* ── helpers ── */
 const WINDOW = 30;
 
-function randomWalk(prev: number, min = 1, max = 3): number {
-  const delta = (Math.random() - 0.5) * 0.6;
-  return Math.min(max, Math.max(min, prev + delta));
+function metricsToScore(redness: number, paleness: number, eye_closure: number): number {
+  if (eye_closure > 0.7 || redness > 0.9) return 3;
+  if (eye_closure > 0.4 || redness > 0.7 || paleness > 0.8) return 2;
+  return 1;
 }
 
 function scoreToLevel(s: number): StatusLevel {
@@ -30,35 +32,29 @@ function scoreToLevel(s: number): StatusLevel {
   return 'normal';
 }
 
-function generateInitial(): DataPoint[] {
-  let body = 1, face = 1;
-  return Array.from({ length: WINDOW + 1 }, (_, i) => {
-    body = randomWalk(body); face = randomWalk(face);
-    const t = WINDOW - i;
-    return { t, label: t === 0 ? 'now' : `${t}s`, body: +body.toFixed(2), face: +face.toFixed(2) };
-  });
-}
-
-/* ── custom tooltip ── */
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-[#1E293B] rounded-xl px-3 py-2.5 shadow-xl border border-white/10 text-xs">
       <p className="text-white/50 mb-1.5">{label === 'now' ? '현재' : `${label} 전`}</p>
-      {[['#60a5fa','신체',payload[0]?.value],['#f472b6','얼굴',payload[1]?.value]].map(([c,l,v]) => (
-        <div key={l as string} className="flex items-center gap-2 mb-0.5">
-          <span className="w-2 h-2 rounded-full" style={{ background: c as string }} />
-          <span className="text-white/70">{l as string}</span>
-          <span className="text-white font-bold ml-auto pl-3">
-            {(v as number) >= 2.5 ? '위험' : (v as number) >= 1.5 ? '주의' : '정상'}
-          </span>
-        </div>
-      ))}
+      <div className="flex flex-col gap-1">
+        {[
+          ['#f472b6', '얼굴 상태', payload[0]?.value],
+          ['#f87171', '홍조', payload[1]?.value],
+          ['#94a3b8', '창백', payload[2]?.value],
+          ['#fbbf24', '눈 감김', payload[3]?.value],
+        ].map(([c, l, v]) => (
+          <div key={l as string} className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full" style={{ background: c as string }} />
+            <span className="text-white/70">{l as string}</span>
+            <span className="text-white font-bold ml-auto pl-3">{typeof v === 'number' ? v.toFixed(2) : '-'}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-/* ── status badge ── */
 const levelCfg = {
   normal:  { label: '정상', color: '#22C55E', bg: '#DCFCE7', text: '#15803D', icon: Shield },
   warning: { label: '주의', color: '#F59E0B', bg: '#FEF3C7', text: '#92400E', icon: AlertTriangle },
@@ -82,50 +78,76 @@ function StatusBadge({ level, title }: { level: StatusLevel; title: string }) {
   );
 }
 
-/* ── main ── */
 export default function AnalysisPage() {
   const [data, setData] = useState<DataPoint[]>([]);
   const [isLive, setIsLive] = useState(true);
+  const [hasRealData, setHasRealData] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setData(generateInitial());
+    const empty: DataPoint[] = Array.from({ length: WINDOW + 1 }, (_, i) => ({
+      t: WINDOW - i,
+      label: WINDOW - i === 0 ? 'now' : `${WINDOW - i}s`,
+      face: 1, redness: 0, paleness: 0, eye_closure: 0,
+    }));
+    setData(empty);
   }, []);
 
   useEffect(() => {
-    if (!isLive) { if (intervalRef.current) clearInterval(intervalRef.current); return; }
+    if (!isLive) {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
 
-    intervalRef.current = setInterval(() => {
+    const supabase = createClient();
+
+    async function fetchLatest() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: rows } = await supabase
+        .from('face_metrics')
+        .select('redness, paleness, eye_closure, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (!rows || rows.length === 0) return;
+
+      setHasRealData(true);
+      const row = rows[0];
+      const face = metricsToScore(row.redness, row.paleness, row.eye_closure);
+
       setData(prev => {
-        const last = prev[prev.length - 1];
-        const newBody = +randomWalk(last.body).toFixed(2);
-        const newFace = +randomWalk(last.face).toFixed(2);
-
+        if (prev.length === 0) return prev;
         const shifted = prev.slice(1).map((d, i) => ({
           ...d,
           t: WINDOW - i - 1,
           label: WINDOW - i - 1 === 0 ? 'now' : `${WINDOW - i - 1}s`,
         }));
-        return [...shifted, { t: 0, label: 'now', body: newBody, face: newFace }];
+        return [...shifted, {
+          t: 0, label: 'now',
+          face: +face.toFixed(2),
+          redness: row.redness,
+          paleness: row.paleness,
+          eye_closure: row.eye_closure,
+        }];
       });
-    }, 1000);
+    }
 
+    intervalRef.current = setInterval(fetchLatest, 1000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isLive]);
 
   if (data.length === 0) return null;
 
   const current = data[data.length - 1];
-  const bodyLevel = scoreToLevel(current.body);
   const faceLevel = scoreToLevel(current.face);
-
-  const worstBody = scoreToLevel(Math.max(...data.map(d => d.body)));
   const worstFace = scoreToLevel(Math.max(...data.map(d => d.face)));
 
   return (
     <div className="flex flex-col gap-4 fade-in">
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-[#0F172A]">실시간 분석</h1>
@@ -142,13 +164,31 @@ export default function AnalysisPage() {
         </button>
       </div>
 
-      {/* Current status badges */}
       <div className="flex gap-3">
-        <StatusBadge level={bodyLevel} title="신체 (Body)" />
         <StatusBadge level={faceLevel} title="얼굴 (Face)" />
+        <div className="flex-1 rounded-2xl p-4 bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col gap-1">
+          <span className="text-xs font-bold uppercase tracking-wider text-[#94A3B8]">눈 감김</span>
+          <span className="text-lg font-bold text-[#0F172A]">{(current.eye_closure * 100).toFixed(0)}%</span>
+        </div>
       </div>
 
-      {/* Main 30s chart */}
+      {/* 상세 수치 */}
+      <div className="bg-white rounded-2xl p-4 border border-[#E2E8F0] shadow-sm flex gap-4">
+        {[
+          { label: '홍조', value: current.redness, color: '#f87171' },
+          { label: '창백', value: current.paleness, color: '#94a3b8' },
+          { label: '눈감김', value: current.eye_closure, color: '#fbbf24' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="flex-1 flex flex-col gap-1.5">
+            <span className="text-xs text-[#94A3B8]">{label}</span>
+            <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${value * 100}%`, background: color }} />
+            </div>
+            <span className="text-xs font-bold text-[#0F172A]">{(value * 100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+
       <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
@@ -165,81 +205,38 @@ export default function AnalysisPage() {
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={data} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-            <XAxis
-              dataKey="label"
-              tick={{ fontSize: 10, fill: '#94A3B8' }}
-              axisLine={false} tickLine={false}
-              interval={4}
-            />
-            <YAxis
-              domain={[0.8, 3.2]}
-              ticks={[1, 2, 3]}
-              tick={{ fontSize: 10, fill: '#94A3B8' }}
-              axisLine={false} tickLine={false}
-            />
-            {/* Zone lines */}
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} interval={4} />
+            <YAxis domain={[0.8, 3.2]} ticks={[1, 2, 3]} tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
             <ReferenceLine y={1.5} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.4} />
             <ReferenceLine y={2.5} stroke="#EF4444" strokeDasharray="4 4" strokeOpacity={0.4} />
             <Tooltip content={<ChartTooltip />} />
-            <Line
-              isAnimationActive={false}
-              type="monotone" dataKey="body" stroke="#60a5fa" strokeWidth={2.5}
-              dot={false} activeDot={{ r: 5, fill: '#60a5fa' }}
-            />
-            <Line
-              isAnimationActive={false}
-              type="monotone" dataKey="face" stroke="#f472b6" strokeWidth={2.5}
-              dot={false} activeDot={{ r: 5, fill: '#f472b6' }}
-            />
+            <Line isAnimationActive={false} type="monotone" dataKey="face" stroke="#f472b6" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+            <Line isAnimationActive={false} type="monotone" dataKey="redness" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
+            <Line isAnimationActive={false} type="monotone" dataKey="eye_closure" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
           </LineChart>
         </ResponsiveContainer>
-
-        <div className="flex gap-5 justify-center mt-3">
-          {[['#60a5fa','신체 (Body)'],['#f472b6','얼굴 (Face)']].map(([c,l]) => (
-            <div key={l} className="flex items-center gap-1.5">
-              <span className="w-4 h-0.5 rounded-full" style={{ background: c }} />
-              <span className="text-xs text-[#64748B]">{l}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
-      {/* 30s summary */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
         <div className="px-5 py-3.5 border-b border-[#F1F5F9]">
           <span className="text-sm font-bold text-[#0F172A]">30초 구간 요약</span>
         </div>
         <div className="divide-y divide-[#F8FAFC]">
-          {[
-            { label: '신체 최고 위험도', level: worstBody },
-            { label: '얼굴 최고 위험도', level: worstFace },
-          ].map(({ label, level }) => {
-            const cfg = levelCfg[level];
-            const Icon = cfg.icon;
-            return (
-              <div key={label} className="flex items-center justify-between px-5 py-3.5">
-                <span className="text-sm text-[#475569]">{label}</span>
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
-                  style={{ background: cfg.bg, color: cfg.text }}>
-                  <Icon size={12} strokeWidth={2.5} />
-                  {cfg.label}
-                </div>
-              </div>
-            );
-          })}
           <div className="flex items-center justify-between px-5 py-3.5">
-            <span className="text-sm text-[#475569]">데이터 포인트</span>
-            <span className="text-sm font-bold text-[#0F172A]">{data.length}개</span>
+            <span className="text-sm text-[#475569]">얼굴 최고 위험도</span>
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
+              style={{ background: levelCfg[worstFace].bg, color: levelCfg[worstFace].text }}>
+              {worstFace === 'normal' ? <Shield size={12} /> : worstFace === 'warning' ? <AlertTriangle size={12} /> : <XOctagon size={12} />}
+              {levelCfg[worstFace].label}
+            </div>
+          </div>
+          <div className="flex items-center justify-between px-5 py-3.5">
+            <span className="text-sm text-[#475569]">데이터 소스</span>
+            <span className={`text-xs font-bold px-2 py-1 rounded-full ${hasRealData ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#F1F5F9] text-[#94A3B8]'}`}>
+              {hasRealData ? '실제 CV 데이터' : '대기 중'}
+            </span>
           </div>
         </div>
-      </div>
-
-      {/* Backend notice */}
-      <div className="rounded-xl px-4 py-3 bg-[#F8FAFC] border border-dashed border-[#CBD5E1] flex items-start gap-2">
-        <Wifi size={14} className="text-[#94A3B8] shrink-0 mt-0.5" />
-        <p className="text-xs text-[#94A3B8] leading-relaxed">
-          현재 시뮬레이션 데이터입니다. 백엔드 <code className="bg-[#E2E8F0] px-1 rounded">GET /status</code> 연동 시 실제 CV 데이터로 교체됩니다.
-        </p>
       </div>
 
     </div>
