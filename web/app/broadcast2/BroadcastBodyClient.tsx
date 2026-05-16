@@ -632,17 +632,20 @@ export default function BroadcastBodyClient() {
     // wait for canvas to have content before Agora capture
     await new Promise(r => setTimeout(r, 300));
 
-    const canvas = canvasRef.current!;
-    const canvasStream = canvas.captureStream(30);
-    const videoTrack = AgoraRTC.createCustomVideoTrack({
-      mediaStreamTrack: canvasStream.getVideoTracks()[0],
-    });
-
-    const client = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
-    client.setClientRole('host');
-    clientRef.current = client;
-    await client.join(APP_ID, BODY_CHANNEL, BODY_TOKEN, null);
-    await client.publish([videoTrack]);
+    try {
+      const canvas = canvasRef.current!;
+      const canvasStream = canvas.captureStream(30);
+      const videoTrack = AgoraRTC.createCustomVideoTrack({
+        mediaStreamTrack: canvasStream.getVideoTracks()[0],
+      });
+      const client = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
+      client.setClientRole('host');
+      clientRef.current = client;
+      await client.join(APP_ID, BODY_CHANNEL, BODY_TOKEN, null);
+      await client.publish([videoTrack]);
+    } catch (e) {
+      console.warn('[Agora] 스트리밍 연결 실패 (CV는 정상 동작):', e);
+    }
 
     setBroadcasting(true);
     setStatus('방송 중');
