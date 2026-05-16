@@ -2,12 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Monitor, BarChart2, Settings } from 'lucide-react';
+import { Monitor, BarChart2 } from 'lucide-react';
 
 const tabs = [
-  { href: '/',         label: 'Monitor',  icon: Monitor   },
-  { href: '/history',  label: 'Analysis', icon: BarChart2 },
-  { href: '/settings', label: 'Settings', icon: Settings  },
+  { href: '/',        label: 'Monitor',  icon: Monitor   },
+  { href: '/history', label: 'Analysis', icon: BarChart2 },
 ];
 
 export default function BottomNav() {
