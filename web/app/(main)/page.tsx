@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { StatusLevel } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
+import { Phone, X } from 'lucide-react';
 
 const AgoraViewer = dynamic(() => import('@/components/AgoraViewer'), { ssr: false });
 
@@ -44,6 +45,37 @@ function metricsToLevel(redness: number, paleness: number, eye_closure: number):
   if (eye_closure > 0.7 || redness >= 0.70 || paleness < 0.38) return 'danger';
   if (eye_closure > 0.4 || redness >= 0.63 || paleness < 0.45) return 'warning';
   return 'normal';
+}
+
+function SosBanner({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-[#1a0000] border-2 border-[#EF4444] rounded-3xl p-8 mx-6 flex flex-col items-center gap-5 shadow-[0_0_60px_rgba(239,68,68,0.5)]">
+        <div className="w-16 h-16 rounded-full bg-[#EF4444] flex items-center justify-center blink">
+          <Phone size={28} className="text-white" />
+        </div>
+        <div className="text-center">
+          <p className="text-[#f87171] text-xs font-bold tracking-widest uppercase mb-1">위험 감지</p>
+          <p className="text-white text-xl font-bold">이상 상태가 감지되었습니다</p>
+          <p className="text-white/60 text-sm mt-1">즉시 확인 또는 응급 연락이 필요합니다</p>
+        </div>
+        <a
+          href="tel:119"
+          className="w-full py-4 bg-[#EF4444] hover:bg-[#dc2626] rounded-2xl text-white font-bold text-lg text-center flex items-center justify-center gap-2 transition-colors"
+        >
+          <Phone size={20} />
+          119 응급 전화
+        </a>
+        <button
+          onClick={onDismiss}
+          className="flex items-center gap-1.5 text-white/40 text-sm hover:text-white/70 transition-colors"
+        >
+          <X size={14} />
+          닫기
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CamCard({ title, subtitle, level, live }: { title: string; subtitle: string; level: StatusLevel; live?: boolean }) {
@@ -118,37 +150,60 @@ function CamCard({ title, subtitle, level, live }: { title: string; subtitle: st
 
 export default function MonitorPage() {
   const [faceLevel, setFaceLevel] = useState<StatusLevel>('normal');
+  const [showSos, setShowSos] = useState(false);
+  const dangerStartRef = useRef<number | null>(null);
+  const sosDismissedRef = useRef(false);
 
   useEffect(() => {
     const supabase = createClient();
-    let timer: ReturnType<typeof setInterval>;
 
-    async function poll() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    supabase
+      .from('face_metrics')
+      .select('redness, paleness, eye_closure')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const { redness, paleness, eye_closure } = data[0];
+          setFaceLevel(metricsToLevel(redness, paleness, eye_closure));
+        }
+      });
 
-      const { data: rows } = await supabase
-        .from('face_metrics')
-        .select('redness, paleness, eye_closure')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
+    const channel = supabase
+      .channel('monitor_live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'face_metrics' },
+        (payload) => {
+          const { redness, paleness, eye_closure } = payload.new as { redness: number; paleness: number; eye_closure: number };
+          setFaceLevel(metricsToLevel(redness, paleness, eye_closure));
+        }
+      )
+      .subscribe();
 
-      if (rows && rows.length > 0) {
-        const { redness, paleness, eye_closure } = rows[0];
-        setFaceLevel(metricsToLevel(redness, paleness, eye_closure));
-      }
-    }
-
-    poll();
-    timer = setInterval(poll, 2000);
-    return () => clearInterval(timer);
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // SOS: danger 5초 이상 지속되면 팝업
+  useEffect(() => {
+    if (faceLevel === 'danger') {
+      if (dangerStartRef.current === null) {
+        dangerStartRef.current = Date.now();
+        sosDismissedRef.current = false;
+      } else if (!sosDismissedRef.current && Date.now() - dangerStartRef.current >= 5000) {
+        setShowSos(true);
+      }
+    } else {
+      dangerStartRef.current = null;
+      sosDismissedRef.current = false;
+    }
+  }, [faceLevel]);
+
   return (
-    <div className="fade-in flex flex-col gap-4">
-      <CamCard title="Body Camera" subtitle="신체 모니터링" level="normal" />
-      <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live />
-    </div>
+    <>
+      {showSos && <SosBanner onDismiss={() => { setShowSos(false); sosDismissedRef.current = true; }} />}
+      <div className="fade-in flex flex-col gap-4">
+        <CamCard title="Body Camera" subtitle="신체 모니터링" level="normal" />
+        <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live />
+      </div>
+    </>
   );
 }

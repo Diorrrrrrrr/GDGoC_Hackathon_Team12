@@ -120,7 +120,12 @@ function NotifCard({ n, unread }: { n: Notification; unread: boolean }) {
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
+
+  function markRead(id: string) {
+    setReadIds(prev => new Set([...prev, id]));
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -154,8 +159,8 @@ export default function NotificationsPage() {
 
   const now = Date.now();
   const UNREAD_CUTOFF = 10 * 60 * 1000;
-  const unread = notifications.filter(n => now - new Date(n.timestamp).getTime() < UNREAD_CUTOFF);
-  const read = notifications.filter(n => now - new Date(n.timestamp).getTime() >= UNREAD_CUTOFF);
+  const unread = notifications.filter(n => !readIds.has(n.id) && now - new Date(n.timestamp).getTime() < UNREAD_CUTOFF);
+  const read = notifications.filter(n => readIds.has(n.id) || now - new Date(n.timestamp).getTime() >= UNREAD_CUTOFF);
 
   return (
     <div className="flex flex-col gap-6 fade-in">
@@ -176,7 +181,11 @@ export default function NotificationsPage() {
         <div>
           <p className="text-xs font-bold text-[#64748B] uppercase tracking-wider mb-3">새 알림</p>
           <div className="flex flex-col gap-2">
-            {unread.map(n => <NotifCard key={n.id} n={n} unread={true} />)}
+            {unread.map(n => (
+              <div key={n.id} onClick={() => markRead(n.id)} className="cursor-pointer">
+                <NotifCard n={n} unread={true} />
+              </div>
+            ))}
           </div>
         </div>
       )}
