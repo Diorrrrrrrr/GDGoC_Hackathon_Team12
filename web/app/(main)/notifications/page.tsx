@@ -41,14 +41,14 @@ function metricsToAlerts(rows: RawMetric[]): Notification[] {
     const ts = new Date(row.created_at).getTime();
     const checks: { key: string; type: Notification['type']; level: 'danger' | 'warning' }[] = [];
 
-    if (row.eye_closure > 0.7)       checks.push({ key: 'stroke-danger',     type: 'stroke',     level: 'danger' });
-    else if (row.eye_closure > 0.4)  checks.push({ key: 'stroke-warning',    type: 'stroke',     level: 'warning' });
+    if (row.eye_closure > 0.7)       checks.push({ key: 'stroke', type: 'stroke',     level: 'danger' });
+    else if (row.eye_closure > 0.4)  checks.push({ key: 'stroke', type: 'stroke',     level: 'warning' });
 
-    if (row.redness >= 0.70)         checks.push({ key: 'heat-danger',       type: 'heatstroke', level: 'danger' });
-    else if (row.redness >= 0.63)    checks.push({ key: 'heat-warning',      type: 'heatstroke', level: 'warning' });
+    if (row.redness >= 0.70)         checks.push({ key: 'heat',   type: 'heatstroke', level: 'danger' });
+    else if (row.redness >= 0.63)    checks.push({ key: 'heat',   type: 'heatstroke', level: 'warning' });
 
-    if (row.paleness < 0.38)         checks.push({ key: 'pale-danger',       type: 'pale',       level: 'danger' });
-    else if (row.paleness < 0.45)    checks.push({ key: 'pale-warning',      type: 'pale',       level: 'warning' });
+    if (row.paleness < 0.38)         checks.push({ key: 'pale',   type: 'pale',       level: 'danger' });
+    else if (row.paleness < 0.45)    checks.push({ key: 'pale',   type: 'pale',       level: 'warning' });
 
     for (const { key, type, level } of checks) {
       const last = lastAlertTime[key] ?? 0;

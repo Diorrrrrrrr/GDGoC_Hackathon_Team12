@@ -51,9 +51,9 @@ export default function BottomNav() {
         if (row.paleness < 0.45)   checks.push({ key: `pale-${row.id}` });
 
         const typeKeys = [
-          { cond: row.eye_closure > 0.7 || row.eye_closure > 0.4, key: 'stroke' },
-          { cond: row.redness >= 0.70 || row.redness >= 0.63,     key: 'heat'   },
-          { cond: row.paleness < 0.38 || row.paleness < 0.45,     key: 'pale'   },
+          { cond: row.eye_closure > 0.4, key: 'stroke' },
+          { cond: row.redness >= 0.63,   key: 'heat'   },
+          { cond: row.paleness < 0.45,   key: 'pale'   },
         ];
         for (const { cond, key } of typeKeys) {
           if (!cond) continue;
