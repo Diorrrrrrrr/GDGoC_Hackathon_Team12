@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { StatusLevel } from '@/lib/types';
+import { createClient } from '@/lib/supabase/client';
 
 const AgoraViewer = dynamic(() => import('@/components/AgoraViewer'), { ssr: false });
 
@@ -37,6 +39,12 @@ const camTheme: Record<StatusLevel, {
     label: 'ALERT',
   },
 };
+
+function metricsToLevel(redness: number, paleness: number, eye_closure: number): StatusLevel {
+  if (eye_closure > 0.7 || redness >= 0.70 || paleness < 0.38) return 'danger';
+  if (eye_closure > 0.4 || redness >= 0.63 || paleness < 0.45) return 'warning';
+  return 'normal';
+}
 
 function CamCard({ title, subtitle, level, live }: { title: string; subtitle: string; level: StatusLevel; live?: boolean }) {
   const th = camTheme[level];
@@ -109,10 +117,38 @@ function CamCard({ title, subtitle, level, live }: { title: string; subtitle: st
 }
 
 export default function MonitorPage() {
+  const [faceLevel, setFaceLevel] = useState<StatusLevel>('normal');
+
+  useEffect(() => {
+    const supabase = createClient();
+    let timer: ReturnType<typeof setInterval>;
+
+    async function poll() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: rows } = await supabase
+        .from('face_metrics')
+        .select('redness, paleness, eye_closure')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (rows && rows.length > 0) {
+        const { redness, paleness, eye_closure } = rows[0];
+        setFaceLevel(metricsToLevel(redness, paleness, eye_closure));
+      }
+    }
+
+    poll();
+    timer = setInterval(poll, 2000);
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <div className="fade-in flex flex-col gap-4">
       <CamCard title="Body Camera" subtitle="신체 모니터링" level="normal" />
-      <CamCard title="Face Camera" subtitle="얼굴 모니터링" level="normal" live />
+      <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live />
     </div>
   );
 }

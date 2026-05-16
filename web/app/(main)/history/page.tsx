@@ -21,8 +21,8 @@ interface DataPoint {
 const WINDOW = 30;
 
 function metricsToScore(redness: number, paleness: number, eye_closure: number): number {
-  if (eye_closure > 0.7 || redness > 0.9) return 3;
-  if (eye_closure > 0.4 || redness > 0.7 || paleness > 0.8) return 2;
+  if (eye_closure > 0.7 || redness >= 0.70 || paleness < 0.38) return 3;
+  if (eye_closure > 0.4 || redness >= 0.63 || paleness < 0.45) return 2;
   return 1;
 }
 
