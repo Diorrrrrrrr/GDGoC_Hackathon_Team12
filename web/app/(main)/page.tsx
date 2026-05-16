@@ -1,8 +1,10 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import type { StatusLevel } from '@/lib/types';
 
-/* ─────────────── Camera Card ─────────────── */
+const AgoraViewer = dynamic(() => import('@/components/AgoraViewer'), { ssr: false });
+
 const camTheme: Record<StatusLevel, {
   gradient: string; glow: string; scanColor: string;
   badge: string; badgeText: string; dot: string; label: string;
@@ -36,12 +38,11 @@ const camTheme: Record<StatusLevel, {
   },
 };
 
-function CamCard({ title, subtitle, level }: { title: string; subtitle: string; level: StatusLevel }) {
+function CamCard({ title, subtitle, level, live }: { title: string; subtitle: string; level: StatusLevel; live?: boolean }) {
   const th = camTheme[level];
   return (
     <div className={`relative rounded-2xl overflow-hidden bg-gradient-to-br ${th.gradient} ${th.glow} transition-all duration-700`}>
       <div className={`h-0.5 w-full ${level === 'normal' ? 'bg-gradient-to-r from-transparent via-[#22C55E] to-transparent' : level === 'warning' ? 'bg-gradient-to-r from-transparent via-[#F59E0B] to-transparent' : 'bg-gradient-to-r from-transparent via-[#EF4444] to-transparent'}`} />
-
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -55,25 +56,31 @@ function CamCard({ title, subtitle, level }: { title: string; subtitle: string; 
         </div>
 
         <div className="relative rounded-xl overflow-hidden aspect-video bg-black/40">
-          <div className="absolute inset-0"
-            style={{
-              backgroundImage: `linear-gradient(${th.scanColor.replace('0.4', '0.06')} 1px, transparent 1px), linear-gradient(90deg, ${th.scanColor.replace('0.4', '0.06')} 1px, transparent 1px)`,
-              backgroundSize: '32px 32px',
-            }}
-          />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="relative">
-              <div className="w-16 h-20 rounded-full border border-white/10 bg-white/5" />
-              <div className="absolute inset-0 rounded-full border animate-ping"
-                style={{ borderColor: th.dot, opacity: 0.2, animationDuration: '2s' }} />
-            </div>
-          </div>
-          <div className="absolute inset-x-0 h-8 pointer-events-none"
-            style={{
-              background: `linear-gradient(to bottom, transparent, ${th.scanColor}, transparent)`,
-              animation: 'scanline 3s ease-in-out infinite',
-            }}
-          />
+          {live ? (
+            <AgoraViewer />
+          ) : (
+            <>
+              <div className="absolute inset-0"
+                style={{
+                  backgroundImage: `linear-gradient(${th.scanColor.replace('0.4', '0.06')} 1px, transparent 1px), linear-gradient(90deg, ${th.scanColor.replace('0.4', '0.06')} 1px, transparent 1px)`,
+                  backgroundSize: '32px 32px',
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="relative">
+                  <div className="w-16 h-20 rounded-full border border-white/10 bg-white/5" />
+                  <div className="absolute inset-0 rounded-full border animate-ping"
+                    style={{ borderColor: th.dot, opacity: 0.2, animationDuration: '2s' }} />
+                </div>
+              </div>
+              <div className="absolute inset-x-0 h-8 pointer-events-none"
+                style={{
+                  background: `linear-gradient(to bottom, transparent, ${th.scanColor}, transparent)`,
+                  animation: 'scanline 3s ease-in-out infinite',
+                }}
+              />
+            </>
+          )}
           {[
             'top-3 left-3 border-t-2 border-l-2',
             'top-3 right-3 border-t-2 border-r-2',
@@ -85,13 +92,10 @@ function CamCard({ title, subtitle, level }: { title: string; subtitle: string; 
           ))}
           <div className="absolute top-3 right-3 flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded px-2 py-0.5">
             <span className="w-1.5 h-1.5 rounded-full bg-red-500 blink" />
-            <span className="text-white/70 text-[9px] font-bold tracking-[0.2em]">REC</span>
+            <span className="text-white/70 text-[9px] font-bold tracking-[0.2em]">LIVE</span>
           </div>
           <div className="absolute bottom-3 left-3">
             <span className="text-[9px] font-bold tracking-widest" style={{ color: th.dot }}>{th.label}</span>
-          </div>
-          <div suppressHydrationWarning className="absolute bottom-3 right-3 text-white/30 text-[9px] font-mono">
-            {new Date().toLocaleTimeString('ko-KR')}
           </div>
         </div>
 
@@ -108,7 +112,7 @@ export default function MonitorPage() {
   return (
     <div className="fade-in flex flex-col gap-4">
       <CamCard title="Body Camera" subtitle="신체 모니터링" level="normal" />
-      <CamCard title="Face Camera" subtitle="얼굴 모니터링" level="normal" />
+      <CamCard title="Face Camera" subtitle="얼굴 모니터링" level="normal" live />
     </div>
   );
 }
