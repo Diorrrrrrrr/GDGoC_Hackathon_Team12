@@ -551,13 +551,13 @@ export default function BroadcastBodyClient() {
   }, []);
 
   async function postEvent(state: BodyState, features: Record<string, unknown>, eventKind: string) {
-    if (!userIdRef.current) return;
+    const uid = userIdRef.current ?? '00000000-0000-0000-0000-000000000001';
     try {
       await fetch(BACKEND_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userIdRef.current,
+          user_id: uid,
           timestamp: new Date().toISOString(),
           alert_type: state,
           overall_severity: SEVERITY[state],
@@ -566,6 +566,16 @@ export default function BroadcastBodyClient() {
         }),
       });
     } catch { /* network error – ignore */ }
+
+    if (eventKind === 'transition') {
+      supabaseRef.current.from('body_events').insert({
+        user_id: uid,
+        state,
+        severity: SEVERITY[state],
+        risk_score: RISK_SCORE[state],
+        features,
+      }).then(() => {});
+    }
   }
 
   async function startBroadcast() {
