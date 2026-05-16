@@ -513,8 +513,7 @@ export default function BroadcastBodyClient() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const landmarkerRef = useRef<PoseLandmarker | null>(null);
   const clientRef = useRef<ReturnType<typeof AgoraRTC.createClient> | null>(null);
-  const rafRef = useRef(0);
-  const lastFrameRef = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detectorsRef = useRef<Detectors>({
     impactFall: new ImpactFallDetector(FPS),
     slowSlump: new SlowSlumpDetector(FPS),
@@ -581,9 +580,8 @@ export default function BroadcastBodyClient() {
     await video.play();
     broadcastRef.current.subscribe();
 
-    // RAF loop: draw webcam → canvas, run detection
-    function loop(timestamp: number) {
-      rafRef.current = requestAnimationFrame(loop);
+    // setInterval loop: works even in background tabs (RAF would throttle)
+    function loop() {
       const v = videoRef.current, c = canvasRef.current;
       if (!v || !c || v.readyState < 2) return;
 
@@ -592,10 +590,7 @@ export default function BroadcastBodyClient() {
       if (c.height !== v.videoHeight) c.height = v.videoHeight;
       ctx.drawImage(v, 0, 0);
 
-      // throttle detection to ~30fps
-      if (timestamp - lastFrameRef.current < 33) return;
-      lastFrameRef.current = timestamp;
-
+      const timestamp = performance.now();
       if (!landmarkerRef.current) return;
       const result = landmarkerRef.current.detectForVideo(v, timestamp);
 
@@ -633,7 +628,7 @@ export default function BroadcastBodyClient() {
         }
       }
     }
-    rafRef.current = requestAnimationFrame(loop);
+    intervalRef.current = setInterval(loop, 33);
 
     // wait for canvas to have content before Agora capture
     await new Promise(r => setTimeout(r, 300));
@@ -658,7 +653,7 @@ export default function BroadcastBodyClient() {
   }
 
   async function stopBroadcast() {
-    cancelAnimationFrame(rafRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
     const video = videoRef.current;
     if (video) {
       (video.srcObject as MediaStream)?.getTracks().forEach(t => t.stop());
