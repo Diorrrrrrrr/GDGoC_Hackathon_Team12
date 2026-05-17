@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { StatusLevel } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
-import { Phone, X } from 'lucide-react';
+import { Phone } from 'lucide-react';
 
 const AgoraViewer = dynamic(() => import('@/components/AgoraViewer'), { ssr: false });
 const AgoraBodyViewer = dynamic(() => import('@/components/AgoraBodyViewer'), { ssr: false });
@@ -48,38 +48,8 @@ function metricsToLevel(redness: number, paleness: number, eye_closure: number):
   return 'normal';
 }
 
-function SosBanner({ onDismiss }: { onDismiss: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#1a0000] border-2 border-[#EF4444] rounded-3xl p-8 mx-6 flex flex-col items-center gap-5 shadow-[0_0_60px_rgba(239,68,68,0.5)]">
-        <div className="w-16 h-16 rounded-full bg-[#EF4444] flex items-center justify-center blink">
-          <Phone size={28} className="text-white" />
-        </div>
-        <div className="text-center">
-          <p className="text-[#f87171] text-xs font-bold tracking-widest uppercase mb-1">위험 감지</p>
-          <p className="text-white text-xl font-bold">이상 상태가 감지되었습니다</p>
-          <p className="text-white/60 text-sm mt-1">즉시 확인 또는 응급 연락이 필요합니다</p>
-        </div>
-        <a
-          href="tel:119"
-          className="w-full py-4 bg-[#EF4444] hover:bg-[#dc2626] rounded-2xl text-white font-bold text-lg text-center flex items-center justify-center gap-2 transition-colors"
-        >
-          <Phone size={20} />
-          119 응급 전화
-        </a>
-        <button
-          onClick={onDismiss}
-          className="flex items-center gap-1.5 text-white/40 text-sm hover:text-white/70 transition-colors"
-        >
-          <X size={14} />
-          닫기
-        </button>
-      </div>
-    </div>
-  );
-}
 
-function CamCard({ title, subtitle, level, live, body }: { title: string; subtitle: string; level: StatusLevel; live?: boolean; body?: boolean }) {
+function CamCard({ title, subtitle, level, live, body, sos }: { title: string; subtitle: string; level: StatusLevel; live?: boolean; body?: boolean; sos?: boolean }) {
   const th = camTheme[level];
   return (
     <div className={`relative rounded-2xl overflow-hidden bg-gradient-to-br ${th.gradient} ${th.glow} transition-all duration-700`}>
@@ -140,6 +110,20 @@ function CamCard({ title, subtitle, level, live, body }: { title: string; subtit
           <div className="absolute bottom-3 left-3">
             <span className="text-[9px] font-bold tracking-widest" style={{ color: th.dot }}>{th.label}</span>
           </div>
+
+          {/* SOS 전화 버튼 — 웹캠 내부 오버레이 */}
+          {sos && (
+            <div className="absolute inset-0 flex items-end justify-end p-3 pointer-events-none">
+              <a
+                href="tel:119"
+                className="pointer-events-auto flex items-center gap-2 bg-[#EF4444] hover:bg-[#dc2626] active:bg-[#b91c1c] text-white font-bold text-sm px-4 py-2.5 rounded-full shadow-lg blink transition-colors"
+                style={{ boxShadow: '0 0 20px rgba(239,68,68,0.7)' }}
+              >
+                <Phone size={16} />
+                119
+              </a>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2 mt-3">
@@ -223,12 +207,9 @@ export default function MonitorPage() {
   }, [faceLevel]);
 
   return (
-    <>
-      {showSos && <SosBanner onDismiss={() => { setShowSos(false); sosDismissedRef.current = true; }} />}
-      <div className="fade-in flex flex-col gap-4">
-        <CamCard title="Body Camera" subtitle="신체 모니터링" level={bodyLevel} live body />
-        <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live />
-      </div>
-    </>
+    <div className="fade-in flex flex-col gap-4">
+      <CamCard title="Body Camera" subtitle="신체 모니터링" level={bodyLevel} live body />
+      <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live sos={showSos} />
+    </div>
   );
 }
