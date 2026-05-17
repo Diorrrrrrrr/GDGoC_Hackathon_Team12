@@ -5,7 +5,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { Activity, Shield, AlertTriangle, XOctagon, Clock, Wifi } from 'lucide-react';
+import { Shield, AlertTriangle, XOctagon, Wifi } from 'lucide-react';
 import type { StatusLevel } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
 
@@ -18,11 +18,19 @@ interface DataPoint {
   eye_closure: number;
 }
 
+interface BodyEvent {
+  id: string;
+  state: string;
+  severity: string;
+  risk_score: number;
+  created_at: string;
+}
+
 const WINDOW = 30;
 
 function metricsToScore(redness: number, paleness: number, eye_closure: number): number {
-  if (eye_closure > 0.7 || redness > 0.9) return 3;
-  if (eye_closure > 0.4 || redness > 0.7 || paleness > 0.8) return 2;
+  if (eye_closure > 0.7 || redness >= 0.70 || paleness < 0.38) return 3;
+  if (eye_closure > 0.4 || redness >= 0.63 || paleness < 0.45) return 2;
   return 1;
 }
 
@@ -32,211 +40,283 @@ function scoreToLevel(s: number): StatusLevel {
   return 'normal';
 }
 
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
+const levelCfg = {
+  normal:  { label: '정상',  color: '#22C55E', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  text: '#16A34A', icon: Shield        },
+  warning: { label: '주의',  color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: '#D97706', icon: AlertTriangle  },
+  danger:  { label: '위험',  color: '#EF4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.3)',  text: '#DC2626', icon: XOctagon       },
+};
+
+const BODY_STATE_KO: Record<string, string> = {
+  NORMAL:               '정상',
+  POSTURAL_ASYMMETRY:   '자세 비대칭',
+  ARM_DRIFT:            '팔 하강 (뇌졸중 의심)',
+  SLOW_SLUMP:           '서서히 쓰러짐',
+  IMPACT_FALL:          '충격 낙상',
+  FALLEN:               '쓰러짐',
+};
+
+const SEVERITY_LEVEL: Record<string, StatusLevel> = {
+  low: 'normal', medium: 'warning', high: 'danger',
+};
+
+// ── Circular gauge ─────────────────────────────────────────────────────────
+function Gauge({ value, color, label }: { value: number; color: string; label: string }) {
+  const r = 26;
+  const circ = 2 * Math.PI * r;
+  const arc = circ * Math.min(1, Math.max(0, value));
   return (
-    <div className="bg-[#1E293B] rounded-xl px-3 py-2.5 shadow-xl border border-white/10 text-xs">
-      <p className="text-white/50 mb-1.5">{label === 'now' ? '현재' : `${label} 전`}</p>
-      <div className="flex flex-col gap-1">
-        {[
-          ['#f472b6', '얼굴 상태', payload[0]?.value],
-          ['#f87171', '홍조', payload[1]?.value],
-          ['#94a3b8', '창백', payload[2]?.value],
-          ['#fbbf24', '눈 감김', payload[3]?.value],
-        ].map(([c, l, v]) => (
-          <div key={l as string} className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full" style={{ background: c as string }} />
-            <span className="text-white/70">{l as string}</span>
-            <span className="text-white font-bold ml-auto pl-3">{typeof v === 'number' ? v.toFixed(2) : '-'}</span>
-          </div>
-        ))}
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-16 h-16">
+        <svg viewBox="0 0 64 64" className="w-full h-full -rotate-90">
+          <circle cx={32} cy={32} r={r} fill="none" stroke="#F1F5F9" strokeWidth={6} />
+          <circle
+            cx={32} cy={32} r={r} fill="none"
+            stroke={color} strokeWidth={6}
+            strokeDasharray={`${arc} ${circ}`}
+            strokeLinecap="round"
+            style={{ transition: 'stroke-dasharray 0.6s ease' }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[13px] font-bold" style={{ color }}>
+            {Math.round(value * 100)}
+          </span>
+        </div>
       </div>
+      <span className="text-[11px] font-semibold text-[#94A3B8] tracking-wide">{label}</span>
     </div>
   );
 }
 
-const levelCfg = {
-  normal:  { label: '정상', color: '#22C55E', bg: '#DCFCE7', text: '#15803D', icon: Shield },
-  warning: { label: '주의', color: '#F59E0B', bg: '#FEF3C7', text: '#92400E', icon: AlertTriangle },
-  danger:  { label: '위험', color: '#EF4444', bg: '#FEE2E2', text: '#991B1B', icon: XOctagon },
-};
-
-function StatusBadge({ level, title }: { level: StatusLevel; title: string }) {
+// ── Status card (face / body) ──────────────────────────────────────────────
+function StatusCard({ level, title, sub }: { level: StatusLevel; title: string; sub?: string }) {
   const cfg = levelCfg[level];
   const Icon = cfg.icon;
   return (
-    <div className="flex-1 rounded-2xl p-4 flex flex-col gap-2" style={{ background: cfg.bg }}>
+    <div
+      className="flex-1 rounded-2xl p-4 flex flex-col gap-3 border"
+      style={{ background: cfg.bg, borderColor: cfg.border }}
+    >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: cfg.text }}>{title}</span>
-        <Icon size={14} style={{ color: cfg.color }} strokeWidth={2.5} />
+        <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: cfg.color }}>{title}</span>
+        <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: cfg.color + '22' }}>
+          <Icon size={13} style={{ color: cfg.color }} strokeWidth={2.5} />
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.color, boxShadow: `0 0 6px ${cfg.color}` }} />
-        <span className="text-lg font-bold" style={{ color: cfg.text }}>{cfg.label}</span>
+      <div>
+        <p className="text-2xl font-black" style={{ color: cfg.text }}>{cfg.label}</p>
+        {sub && <p className="text-[11px] mt-0.5" style={{ color: cfg.color + 'bb' }}>{sub}</p>}
+      </div>
+      <div className="h-1 rounded-full" style={{ background: cfg.color + '33' }}>
+        <div
+          className="h-full rounded-full"
+          style={{
+            background: cfg.color,
+            width: level === 'normal' ? '30%' : level === 'warning' ? '65%' : '100%',
+            transition: 'width 0.6s ease',
+          }}
+        />
       </div>
     </div>
   );
 }
 
+// ── Tooltip ────────────────────────────────────────────────────────────────
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-[#0F172A] rounded-xl px-3 py-2.5 shadow-xl border border-white/10 text-xs">
+      <p className="text-white/40 mb-2 font-medium">{label === 'now' ? '현재' : `${label} 전`}</p>
+      {[
+        { color: '#a78bfa', label: '위험도', v: payload[0]?.value },
+        { color: '#f87171', label: '홍조',   v: payload[1]?.value },
+        { color: '#fbbf24', label: '눈감김', v: payload[2]?.value },
+      ].map(({ color, label: l, v }) => (
+        <div key={l} className="flex items-center gap-2 mb-0.5">
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
+          <span className="text-white/60 flex-1">{l}</span>
+          <span className="text-white font-bold">{typeof v === 'number' ? v.toFixed(2) : '-'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Body event timeline item ───────────────────────────────────────────────
+function EventItem({ event }: { event: BodyEvent }) {
+  const level = SEVERITY_LEVEL[event.severity] ?? 'normal';
+  const cfg = levelCfg[level];
+  const time = new Date(event.created_at).toLocaleTimeString('ko-KR', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  return (
+    <div className="flex items-center gap-3 py-3 px-4 border-b border-[#F8FAFC] last:border-0">
+      <div className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ background: cfg.color }} />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-[#0F172A] truncate">{BODY_STATE_KO[event.state] ?? event.state}</p>
+        <p className="text-[11px] text-[#94A3B8] mt-0.5">{time}</p>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-sm font-black" style={{ color: cfg.color }}>{(event.risk_score * 100).toFixed(0)}%</p>
+        <p className="text-[10px] text-[#CBD5E1] uppercase tracking-wide">{event.severity}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────
 export default function AnalysisPage() {
   const [data, setData] = useState<DataPoint[]>([]);
   const [isLive, setIsLive] = useState(true);
-  const [hasRealData, setHasRealData] = useState(false);
+  const [bodyLevel, setBodyLevel] = useState<StatusLevel>('normal');
+  const [bodyEvents, setBodyEvents] = useState<BodyEvent[]>([]);
+  const [lastBodyState, setLastBodyState] = useState('—');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const empty: DataPoint[] = Array.from({ length: WINDOW + 1 }, (_, i) => ({
-      t: WINDOW - i,
-      label: WINDOW - i === 0 ? 'now' : `${WINDOW - i}s`,
-      face: 1, redness: 0, paleness: 0, eye_closure: 0,
-    }));
-    setData(empty);
+    setData(Array.from({ length: WINDOW + 1 }, (_, i) => ({
+      t: WINDOW - i, label: WINDOW - i === 0 ? 'now' : `${WINDOW - i}s`,
+      face: 1, redness: 0, paleness: 0.5, eye_closure: 0,
+    })));
   }, []);
 
+  // body broadcast
   useEffect(() => {
-    if (!isLive) {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      return;
-    }
-
     const supabase = createClient();
+    const ch = supabase.channel('body-state-analysis')
+      .on('broadcast', { event: 'body-state' }, ({ payload }) => {
+        const s = payload?.severity as string;
+        setBodyLevel(s === 'high' ? 'danger' : s === 'medium' ? 'warning' : 'normal');
+        if (payload?.state) setLastBodyState(BODY_STATE_KO[payload.state] ?? payload.state);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
-    async function fetchLatest() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // body_events realtime
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.from('body_events')
+      .select('id, state, severity, risk_score, created_at')
+      .order('created_at', { ascending: false })
+      .limit(15)
+      .then(({ data: rows }) => { if (rows) setBodyEvents(rows as BodyEvent[]); });
 
+    const ch = supabase.channel('body_events_rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'body_events' }, ({ new: row }) => {
+        const ev = row as BodyEvent;
+        setBodyEvents(prev => [ev, ...prev].slice(0, 15));
+        setBodyLevel(SEVERITY_LEVEL[ev.severity] ?? 'normal');
+        setLastBodyState(BODY_STATE_KO[ev.state] ?? ev.state);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  // face_metrics polling
+  useEffect(() => {
+    if (!isLive) { if (intervalRef.current) clearInterval(intervalRef.current); return; }
+    const supabase = createClient();
+    async function tick() {
       const { data: rows } = await supabase
         .from('face_metrics')
-        .select('redness, paleness, eye_closure, created_at')
-        .eq('user_id', user.id)
+        .select('redness, paleness, eye_closure')
         .order('created_at', { ascending: false })
         .limit(1);
-
-      if (!rows || rows.length === 0) return;
-
-      setHasRealData(true);
-      const row = rows[0];
-      const face = metricsToScore(row.redness, row.paleness, row.eye_closure);
-
+      if (!rows?.length) return;
+      const { redness, paleness, eye_closure } = rows[0];
+      const face = metricsToScore(redness, paleness, eye_closure);
       setData(prev => {
-        if (prev.length === 0) return prev;
+        if (!prev.length) return prev;
         const shifted = prev.slice(1).map((d, i) => ({
-          ...d,
-          t: WINDOW - i - 1,
-          label: WINDOW - i - 1 === 0 ? 'now' : `${WINDOW - i - 1}s`,
+          ...d, t: WINDOW - i - 1, label: WINDOW - i - 1 === 0 ? 'now' : `${WINDOW - i - 1}s`,
         }));
-        return [...shifted, {
-          t: 0, label: 'now',
-          face: +face.toFixed(2),
-          redness: row.redness,
-          paleness: row.paleness,
-          eye_closure: row.eye_closure,
-        }];
+        return [...shifted, { t: 0, label: 'now', face: +face.toFixed(2), redness, paleness, eye_closure }];
       });
     }
-
-    intervalRef.current = setInterval(fetchLatest, 1000);
+    intervalRef.current = setInterval(tick, 1000);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isLive]);
 
-  if (data.length === 0) return null;
+  if (!data.length) return null;
 
-  const current = data[data.length - 1];
-  const faceLevel = scoreToLevel(current.face);
-  const worstFace = scoreToLevel(Math.max(...data.map(d => d.face)));
+  const cur = data[data.length - 1];
+  const faceLevel = scoreToLevel(cur.face);
 
   return (
-    <div className="flex flex-col gap-4 fade-in">
+    <div className="flex flex-col gap-5 fade-in pb-2">
 
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#0F172A]">실시간 분석</h1>
-          <p className="text-sm text-[#64748B] mt-0.5">최근 30초 감지 데이터</p>
+          <h1 className="text-[22px] font-black text-[#0F172A] tracking-tight">분석</h1>
+          <p className="text-xs text-[#94A3B8] mt-0.5 font-medium">실시간 · 최근 30초</p>
         </div>
         <button
           onClick={() => setIsLive(v => !v)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-            isLive ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#F1F5F9] text-[#64748B]'
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold transition-all border ${
+            isLive
+              ? 'bg-[#DCFCE7] text-[#15803D] border-[#22C55E]/30'
+              : 'bg-[#F8FAFC] text-[#94A3B8] border-[#E2E8F0]'
           }`}
         >
-          <Wifi size={12} strokeWidth={2.5} className={isLive ? 'text-[#22C55E]' : ''} />
+          <Wifi size={12} strokeWidth={2.5} />
           {isLive ? 'LIVE' : 'PAUSED'}
         </button>
       </div>
 
+      {/* Face + Body status */}
       <div className="flex gap-3">
-        <StatusBadge level={faceLevel} title="얼굴 (Face)" />
-        <div className="flex-1 rounded-2xl p-4 bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col gap-1">
-          <span className="text-xs font-bold uppercase tracking-wider text-[#94A3B8]">눈 감김</span>
-          <span className="text-lg font-bold text-[#0F172A]">{(current.eye_closure * 100).toFixed(0)}%</span>
+        <StatusCard level={faceLevel} title="얼굴" sub="Face CV" />
+        <StatusCard level={bodyLevel} title="신체" sub={lastBodyState} />
+      </div>
+
+      {/* Gauges */}
+      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm px-4 py-5">
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#CBD5E1] mb-5">얼굴 바이오메트릭</p>
+        <div className="flex justify-around">
+          <Gauge value={cur.redness}     color="#f87171" label="홍조" />
+          <Gauge value={1 - cur.paleness} color="#94a3b8" label="창백" />
+          <Gauge value={cur.eye_closure} color="#fbbf24" label="눈 감김" />
         </div>
       </div>
 
-      {/* 상세 수치 */}
-      <div className="bg-white rounded-2xl p-4 border border-[#E2E8F0] shadow-sm flex gap-4">
-        {[
-          { label: '홍조', value: current.redness, color: '#f87171' },
-          { label: '창백', value: current.paleness, color: '#94a3b8' },
-          { label: '눈감김', value: current.eye_closure, color: '#fbbf24' },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="flex-1 flex flex-col gap-1.5">
-            <span className="text-xs text-[#94A3B8]">{label}</span>
-            <div className="h-1.5 bg-[#F1F5F9] rounded-full overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${value * 100}%`, background: color }} />
-            </div>
-            <span className="text-xs font-bold text-[#0F172A]">{(value * 100).toFixed(0)}%</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-2xl p-5 border border-[#E2E8F0] shadow-sm">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <Activity size={15} className="text-[#1D6FD8]" />
-            <span className="text-sm font-bold text-[#0F172A]">30초 상태 추이</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
-            <Clock size={11} />
-            1초 간격
+      {/* Chart */}
+      <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-sm font-bold text-[#0F172A]">30초 위험도 추이</p>
+          <div className="flex items-center gap-3 text-[10px] text-[#CBD5E1] font-semibold">
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#a78bfa] inline-block rounded" />위험도</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#f87171] inline-block rounded" />홍조</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#fbbf24] inline-block rounded" />눈감김</span>
           </div>
         </div>
-        <p className="text-xs text-[#94A3B8] mb-4">1=정상 · 2=주의 · 3=위험</p>
-
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={180}>
           <LineChart data={data} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} interval={4} />
-            <YAxis domain={[0.8, 3.2]} ticks={[1, 2, 3]} tick={{ fontSize: 10, fill: '#94A3B8' }} axisLine={false} tickLine={false} />
-            <ReferenceLine y={1.5} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.4} />
-            <ReferenceLine y={2.5} stroke="#EF4444" strokeDasharray="4 4" strokeOpacity={0.4} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#F8FAFC" />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#CBD5E1' }} axisLine={false} tickLine={false} interval={4} />
+            <YAxis domain={[0.8, 3.2]} ticks={[1, 2, 3]} tick={{ fontSize: 10, fill: '#CBD5E1' }} axisLine={false} tickLine={false} />
+            <ReferenceLine y={1.5} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.35} />
+            <ReferenceLine y={2.5} stroke="#EF4444" strokeDasharray="4 4" strokeOpacity={0.35} />
             <Tooltip content={<ChartTooltip />} />
-            <Line isAnimationActive={false} type="monotone" dataKey="face" stroke="#f472b6" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
-            <Line isAnimationActive={false} type="monotone" dataKey="redness" stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
-            <Line isAnimationActive={false} type="monotone" dataKey="eye_closure" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="3 3" />
+            <Line isAnimationActive={false} type="monotone" dataKey="face"        stroke="#a78bfa" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#a78bfa' }} />
+            <Line isAnimationActive={false} type="monotone" dataKey="redness"     stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
+            <Line isAnimationActive={false} type="monotone" dataKey="eye_closure" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
           </LineChart>
         </ResponsiveContainer>
       </div>
 
+      {/* Body events */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-[#F1F5F9]">
-          <span className="text-sm font-bold text-[#0F172A]">30초 구간 요약</span>
+        <div className="px-4 py-3.5 border-b border-[#F1F5F9] flex items-center justify-between">
+          <p className="text-sm font-bold text-[#0F172A]">신체 이벤트</p>
+          <span className="text-[10px] font-bold text-[#CBD5E1] uppercase tracking-widest">최근 {bodyEvents.length}건</span>
         </div>
-        <div className="divide-y divide-[#F8FAFC]">
-          <div className="flex items-center justify-between px-5 py-3.5">
-            <span className="text-sm text-[#475569]">얼굴 최고 위험도</span>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold"
-              style={{ background: levelCfg[worstFace].bg, color: levelCfg[worstFace].text }}>
-              {worstFace === 'normal' ? <Shield size={12} /> : worstFace === 'warning' ? <AlertTriangle size={12} /> : <XOctagon size={12} />}
-              {levelCfg[worstFace].label}
-            </div>
-          </div>
-          <div className="flex items-center justify-between px-5 py-3.5">
-            <span className="text-sm text-[#475569]">데이터 소스</span>
-            <span className={`text-xs font-bold px-2 py-1 rounded-full ${hasRealData ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#F1F5F9] text-[#94A3B8]'}`}>
-              {hasRealData ? '실제 CV 데이터' : '대기 중'}
-            </span>
-          </div>
-        </div>
+        {bodyEvents.length === 0 ? (
+          <div className="py-10 text-center text-sm text-[#CBD5E1]">이벤트 없음</div>
+        ) : (
+          bodyEvents.map(ev => <EventItem key={ev.id} event={ev} />)
+        )}
       </div>
 
     </div>
