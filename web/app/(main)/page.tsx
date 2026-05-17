@@ -205,12 +205,20 @@ export default function MonitorPage() {
       if (dangerStartRef.current === null) {
         dangerStartRef.current = Date.now();
         sosDismissedRef.current = false;
-      } else if (!sosDismissedRef.current && Date.now() - dangerStartRef.current >= 5000) {
-        setShowSos(true);
+      }
+      if (!sosDismissedRef.current) {
+        const remaining = 5000 - (Date.now() - dangerStartRef.current!);
+        if (remaining <= 0) {
+          setShowSos(true);
+        } else {
+          const t = setTimeout(() => setShowSos(true), remaining);
+          return () => clearTimeout(t);
+        }
       }
     } else {
       dangerStartRef.current = null;
       sosDismissedRef.current = false;
+      setShowSos(false);
     }
   }, [faceLevel]);
 
