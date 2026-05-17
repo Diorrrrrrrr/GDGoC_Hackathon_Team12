@@ -12,18 +12,34 @@ interface RawMetric {
   created_at: string;
 }
 
+interface RawBodyEvent {
+  id: string;
+  state: string;
+  severity: string;
+  created_at: string;
+}
+
 interface Notification {
   id: string;
   timestamp: string;
-  type: 'stroke' | 'heatstroke' | 'pale';
+  type: 'stroke' | 'heatstroke' | 'pale' | 'body';
   message: string;
   level: 'danger' | 'warning';
 }
 
+const BODY_STATE_KO: Record<string, string> = {
+  POSTURAL_ASYMMETRY: '자세 비대칭',
+  ARM_DRIFT:          '팔 하강 (뇌졸중 의심)',
+  SLOW_SLUMP:         '서서히 쓰러짐',
+  IMPACT_FALL:        '충격 낙상',
+  FALLEN:             '쓰러짐',
+};
+
 const typeConfig = {
-  stroke:     { icon: Activity,      label: '눈감김 이상',   dangerMsg: '눈감김이 위험 수준으로 감지되었습니다. 즉시 확인이 필요합니다.', warningMsg: '눈감김이 주의 수준으로 감지되었습니다.' },
-  heatstroke: { icon: Thermometer,   label: '홍조 감지',     dangerMsg: '홍조가 위험 수준입니다. 열사병 위험이 있습니다.', warningMsg: '홍조가 주의 수준입니다.' },
-  pale:       { icon: User,          label: '안색 창백',     dangerMsg: '얼굴이 위험 수준으로 창백합니다. 즉시 확인이 필요합니다.', warningMsg: '얼굴이 다소 창백한 상태입니다.' },
+  stroke:     { icon: Activity,     label: '눈감김 이상', dangerMsg: '눈감김이 위험 수준으로 감지되었습니다. 즉시 확인이 필요합니다.', warningMsg: '눈감김이 주의 수준으로 감지되었습니다.' },
+  heatstroke: { icon: Thermometer,  label: '홍조 감지',   dangerMsg: '홍조가 위험 수준입니다. 열사병 위험이 있습니다.', warningMsg: '홍조가 주의 수준입니다.' },
+  pale:       { icon: User,         label: '안색 창백',   dangerMsg: '얼굴이 위험 수준으로 창백합니다. 즉시 확인이 필요합니다.', warningMsg: '얼굴이 다소 창백한 상태입니다.' },
+  body:       { icon: AlertTriangle, label: '신체 이상',  dangerMsg: '신체 위험 상태가 감지되었습니다. 즉시 확인이 필요합니다.', warningMsg: '신체 이상 상태가 감지되었습니다.' },
 };
 
 const levelStyle = {
@@ -146,32 +162,47 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    const UNREAD_CUTOFF = 10 * 60 * 1000;
 
-    async function fetch() {
-      const { data } = await supabase
-        .from('face_metrics')
-        .select('id, redness, paleness, eye_closure, created_at')
-        .order('created_at', { ascending: false })
-        .limit(500);
+    async function load() {
+      const [{ data: faceData }, { data: bodyData }] = await Promise.all([
+        supabase
+          .from('face_metrics')
+          .select('id, redness, paleness, eye_closure, created_at')
+          .order('created_at', { ascending: false })
+          .limit(500),
+        supabase
+          .from('body_events')
+          .select('id, state, severity, created_at')
+          .neq('state', 'NORMAL')
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]);
 
-      if (data) {
-        const alerts = metricsToAlerts(data as RawMetric[]);
-        setNotifications(alerts);
-      }
+      const faceAlerts = metricsToAlerts((faceData ?? []) as RawMetric[]);
+      const bodyAlerts: Notification[] = ((bodyData ?? []) as RawBodyEvent[]).map(ev => ({
+        id: `body-${ev.id}`,
+        timestamp: ev.created_at,
+        type: 'body',
+        level: ev.severity === 'high' ? 'danger' : 'warning',
+        message: ev.severity === 'high'
+          ? `${BODY_STATE_KO[ev.state] ?? ev.state} — 즉시 확인이 필요합니다.`
+          : `${BODY_STATE_KO[ev.state] ?? ev.state} 감지되었습니다.`,
+      }));
+
+      const all = [...faceAlerts, ...bodyAlerts]
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setNotifications(all);
       setLoaded(true);
     }
 
-    fetch();
+    load();
 
-    const channel = supabase
-      .channel('notif_live')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'face_metrics' }, () => {
-        fetch();
-      })
+    const ch = supabase.channel('notif_live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'face_metrics' }, load)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'body_events' }, load)
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase.removeChannel(ch); };
   }, []);
 
   const now = Date.now();

@@ -140,6 +140,7 @@ export default function MonitorPage() {
   const [bodyLevel, setBodyLevel] = useState<StatusLevel>('normal');
   const [showSos, setShowSos] = useState(false);
   const dangerStartRef = useRef<number | null>(null);
+  const bodyDangerStartRef = useRef<number | null>(null);
   const sosDismissedRef = useRef(false);
 
   useEffect(() => {
@@ -183,7 +184,7 @@ export default function MonitorPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // SOS: danger 5초 이상 지속되면 팝업
+  // SOS: faceLevel 또는 bodyLevel danger 5초 지속 시 119 버튼
   useEffect(() => {
     if (faceLevel === 'danger') {
       if (dangerStartRef.current === null) {
@@ -192,19 +193,31 @@ export default function MonitorPage() {
       }
       if (!sosDismissedRef.current) {
         const remaining = 5000 - (Date.now() - dangerStartRef.current!);
-        if (remaining <= 0) {
-          setShowSos(true);
-        } else {
-          const t = setTimeout(() => setShowSos(true), remaining);
-          return () => clearTimeout(t);
-        }
+        if (remaining <= 0) { setShowSos(true); }
+        else { const t = setTimeout(() => setShowSos(true), remaining); return () => clearTimeout(t); }
       }
     } else {
       dangerStartRef.current = null;
-      sosDismissedRef.current = false;
-      setShowSos(false);
+      if (bodyDangerStartRef.current === null) setShowSos(false);
     }
   }, [faceLevel]);
+
+  useEffect(() => {
+    if (bodyLevel === 'danger') {
+      if (bodyDangerStartRef.current === null) {
+        bodyDangerStartRef.current = Date.now();
+        sosDismissedRef.current = false;
+      }
+      if (!sosDismissedRef.current) {
+        const remaining = 5000 - (Date.now() - bodyDangerStartRef.current!);
+        if (remaining <= 0) { setShowSos(true); }
+        else { const t = setTimeout(() => setShowSos(true), remaining); return () => clearTimeout(t); }
+      }
+    } else {
+      bodyDangerStartRef.current = null;
+      if (dangerStartRef.current === null) setShowSos(false);
+    }
+  }, [bodyLevel]);
 
   return (
     <div className="fade-in flex flex-col gap-4">

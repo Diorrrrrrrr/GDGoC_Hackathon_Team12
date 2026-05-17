@@ -574,7 +574,9 @@ export default function BroadcastBodyClient() {
         severity: SEVERITY[state],
         risk_score: RISK_SCORE[state],
         features,
-      }).then(() => {});
+      }).then(({ error }) => {
+        if (error) console.error('[body_events insert]', error.message, error.details);
+      });
     }
   }
 
