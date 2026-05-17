@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Activity, Eye, EyeOff, UserPlus, Heart, Shield } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useT } from '@/lib/i18n';
 
 type Role = 'elder' | 'caregiver';
 
 export default function SignupPage() {
+  const t = useT();
   const router = useRouter();
   const [role, setRole] = useState<Role>('caregiver');
   const [showPw, setShowPw] = useState(false);
@@ -46,15 +48,14 @@ export default function SignupPage() {
         </div>
         <div>
           <p className="font-bold text-[#0F172A] text-lg leading-tight">CareWatch</p>
-          <p className="text-[10px] text-[#94A3B8] leading-none">실시간 건강 모니터링</p>
+          <p className="text-[10px] text-[#94A3B8] leading-none">{t('appTagline')}</p>
         </div>
       </div>
 
       <div className="bg-white rounded-3xl shadow-xl shadow-black/5 border border-[#F1F5F9] p-6">
-        <h1 className="text-xl font-bold text-[#0F172A] mb-1">회원가입</h1>
-        <p className="text-sm text-[#94A3B8] mb-5">새 계정을 만드세요</p>
+        <h1 className="text-xl font-bold text-[#0F172A] mb-1">{t('signup')}</h1>
+        <p className="text-sm text-[#94A3B8] mb-5">{t('signupPrompt')}</p>
 
-        {/* 역할 선택 */}
         <div className="flex gap-2 mb-5">
           <button
             type="button"
@@ -66,7 +67,7 @@ export default function SignupPage() {
             }`}
           >
             <Shield size={20} className={role === 'caregiver' ? 'text-[#1D6FD8]' : 'text-[#94A3B8]'} strokeWidth={2} />
-            <span className={`text-xs font-bold ${role === 'caregiver' ? 'text-[#1D4ED8]' : 'text-[#94A3B8]'}`}>보호자</span>
+            <span className={`text-xs font-bold ${role === 'caregiver' ? 'text-[#1D4ED8]' : 'text-[#94A3B8]'}`}>{t('roleCaregiver')}</span>
           </button>
           <button
             type="button"
@@ -78,16 +79,16 @@ export default function SignupPage() {
             }`}
           >
             <Heart size={20} className={role === 'elder' ? 'text-[#22C55E]' : 'text-[#94A3B8]'} strokeWidth={2} />
-            <span className={`text-xs font-bold ${role === 'elder' ? 'text-[#15803D]' : 'text-[#94A3B8]'}`}>어르신</span>
+            <span className={`text-xs font-bold ${role === 'elder' ? 'text-[#15803D]' : 'text-[#94A3B8]'}`}>{t('roleElder')}</span>
           </button>
         </div>
 
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div>
-            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">이름</label>
+            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">{t('name')}</label>
             <input
               type="text"
-              placeholder="홍길동"
+              placeholder={t('namePlaceholder')}
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               required
@@ -96,7 +97,7 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">이메일</label>
+            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">{t('email')}</label>
             <input
               type="email"
               placeholder="name@example.com"
@@ -108,7 +109,7 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">비밀번호</label>
+            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">{t('password')}</label>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
@@ -137,23 +138,22 @@ export default function SignupPage() {
                 : 'bg-[#1D6FD8] hover:bg-[#1a63c4] shadow-[#1D6FD8]/25'
             }`}>
             <UserPlus size={16} strokeWidth={2.5} />
-            {loading ? '가입 중...' : '가입하기'}
+            {loading ? t('signingUp') : t('signupAction')}
           </button>
         </form>
 
-        {/* 어르신 QR 로그인 */}
         {role === 'elder' && (
           <div className="mt-4 p-3 rounded-xl bg-[#F0FDF4] border border-[#bbf7d0] text-center">
-            <p className="text-xs text-[#15803D] font-medium">스마트폰이 불편하신가요?</p>
+            <p className="text-xs text-[#15803D] font-medium">{t('elderQrPrompt')}</p>
             <Link href="/login" className="text-xs text-[#16a34a] font-bold hover:underline">
-              보호자가 QR로 대신 로그인해드릴 수 있어요 →
+              {t('elderQrAction')}
             </Link>
           </div>
         )}
 
         <p className="text-center text-xs text-[#94A3B8] mt-4">
-          이미 계정이 있으신가요?{' '}
-          <Link href="/login" className="text-[#1D6FD8] font-bold hover:underline">로그인</Link>
+          {t('hasAccount')}{' '}
+          <Link href="/login" className="text-[#1D6FD8] font-bold hover:underline">{t('login')}</Link>
         </p>
       </div>
     </div>

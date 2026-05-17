@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Activity, Eye, EyeOff, LogIn } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { useT } from '@/lib/i18n';
 
 export default function LoginPage() {
+  const t = useT();
   const router = useRouter();
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({ email: '', password: '' });
@@ -25,7 +27,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      setError(t('loginInvalid'));
       setLoading(false);
       return;
     }
@@ -42,17 +44,17 @@ export default function LoginPage() {
         </div>
         <div>
           <p className="font-bold text-[#0F172A] text-lg leading-tight">CareWatch</p>
-          <p className="text-[10px] text-[#94A3B8] leading-none">실시간 건강 모니터링</p>
+          <p className="text-[10px] text-[#94A3B8] leading-none">{t('appTagline')}</p>
         </div>
       </div>
 
       <div className="bg-white rounded-3xl shadow-xl shadow-black/5 border border-[#F1F5F9] p-6">
-        <h1 className="text-xl font-bold text-[#0F172A] mb-1">로그인</h1>
-        <p className="text-sm text-[#94A3B8] mb-6">계정에 로그인하세요</p>
+        <h1 className="text-xl font-bold text-[#0F172A] mb-1">{t('login')}</h1>
+        <p className="text-sm text-[#94A3B8] mb-6">{t('loginPrompt')}</p>
 
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <div>
-            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">이메일</label>
+            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">{t('email')}</label>
             <input
               type="email"
               placeholder="name@example.com"
@@ -64,7 +66,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">비밀번호</label>
+            <label className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-1.5 block">{t('password')}</label>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
@@ -88,13 +90,13 @@ export default function LoginPage() {
           <button type="submit" disabled={loading}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1D6FD8] text-white text-sm font-bold hover:bg-[#1a63c4] active:scale-95 transition-all shadow-md shadow-[#1D6FD8]/25 mt-1 disabled:opacity-60 disabled:cursor-not-allowed">
             <LogIn size={16} strokeWidth={2.5} />
-            {loading ? '로그인 중...' : '로그인'}
+            {loading ? t('loggingIn') : t('login')}
           </button>
         </form>
 
         <p className="text-center text-xs text-[#94A3B8] mt-5">
-          계정이 없으신가요?{' '}
-          <Link href="/signup" className="text-[#1D6FD8] font-bold hover:underline">회원가입</Link>
+          {t('noAccount')}{' '}
+          <Link href="/signup" className="text-[#1D6FD8] font-bold hover:underline">{t('signup')}</Link>
         </p>
       </div>
     </div>

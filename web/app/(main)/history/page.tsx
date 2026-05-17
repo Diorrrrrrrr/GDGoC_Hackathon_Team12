@@ -8,6 +8,7 @@ import {
 import { Shield, AlertTriangle, XOctagon, Wifi } from 'lucide-react';
 import type { StatusLevel } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
+import { useT, bodyStateKey } from '@/lib/i18n';
 
 interface DataPoint {
   t: number;
@@ -41,25 +42,17 @@ function scoreToLevel(s: number): StatusLevel {
 }
 
 const levelCfg = {
-  normal:  { label: '정상',  color: '#22C55E', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  text: '#16A34A', icon: Shield        },
-  warning: { label: '주의',  color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: '#D97706', icon: AlertTriangle  },
-  danger:  { label: '위험',  color: '#EF4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.3)',  text: '#DC2626', icon: XOctagon       },
+  normal:  { color: '#22C55E', bg: 'rgba(34,197,94,0.12)',  border: 'rgba(34,197,94,0.3)',  text: '#16A34A', icon: Shield        },
+  warning: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: '#D97706', icon: AlertTriangle  },
+  danger:  { color: '#EF4444', bg: 'rgba(239,68,68,0.12)',  border: 'rgba(239,68,68,0.3)',  text: '#DC2626', icon: XOctagon       },
 };
 
-const BODY_STATE_KO: Record<string, string> = {
-  NORMAL:               '정상',
-  POSTURAL_ASYMMETRY:   '자세 비대칭',
-  ARM_DRIFT:            '팔 하강 (뇌졸중 의심)',
-  SLOW_SLUMP:           '서서히 쓰러짐',
-  IMPACT_FALL:          '충격 낙상',
-  FALLEN:               '쓰러짐',
-};
+const levelLabelKey = { normal: 'levelNormal', warning: 'levelWarning', danger: 'levelDanger' } as const;
 
 const SEVERITY_LEVEL: Record<string, StatusLevel> = {
   low: 'normal', medium: 'warning', high: 'danger',
 };
 
-// ── Circular gauge ─────────────────────────────────────────────────────────
 function Gauge({ value, color, label }: { value: number; color: string; label: string }) {
   const r = 26;
   const circ = 2 * Math.PI * r;
@@ -88,8 +81,8 @@ function Gauge({ value, color, label }: { value: number; color: string; label: s
   );
 }
 
-// ── Status card (face / body) ──────────────────────────────────────────────
 function StatusCard({ level, title, sub }: { level: StatusLevel; title: string; sub?: string }) {
+  const t = useT();
   const cfg = levelCfg[level];
   const Icon = cfg.icon;
   return (
@@ -104,7 +97,7 @@ function StatusCard({ level, title, sub }: { level: StatusLevel; title: string; 
         </div>
       </div>
       <div>
-        <p className="text-2xl font-black" style={{ color: cfg.text }}>{cfg.label}</p>
+        <p className="text-2xl font-black" style={{ color: cfg.text }}>{t(levelLabelKey[level])}</p>
         {sub && <p className="text-[11px] mt-0.5" style={{ color: cfg.color + 'bb' }}>{sub}</p>}
       </div>
       <div className="h-1 rounded-full" style={{ background: cfg.color + '33' }}>
@@ -121,16 +114,15 @@ function StatusCard({ level, title, sub }: { level: StatusLevel; title: string; 
   );
 }
 
-// ── Tooltip ────────────────────────────────────────────────────────────────
-function ChartTooltip({ active, payload, label }: any) {
+function ChartTooltip({ active, payload, label, t }: any) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-[#0F172A] rounded-xl px-3 py-2.5 shadow-xl border border-white/10 text-xs">
-      <p className="text-white/40 mb-2 font-medium">{label === 'now' ? '현재' : `${label} 전`}</p>
+      <p className="text-white/40 mb-2 font-medium">{label === 'now' ? t('now') : t('ago', label)}</p>
       {[
-        { color: '#a78bfa', label: '위험도', v: payload[0]?.value },
-        { color: '#f87171', label: '홍조',   v: payload[1]?.value },
-        { color: '#fbbf24', label: '눈감김', v: payload[2]?.value },
+        { color: '#a78bfa', label: t('riskScore'), v: payload[0]?.value },
+        { color: '#f87171', label: t('redness'),   v: payload[1]?.value },
+        { color: '#fbbf24', label: t('eyeClosed'), v: payload[2]?.value },
       ].map(({ color, label: l, v }) => (
         <div key={l} className="flex items-center gap-2 mb-0.5">
           <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
@@ -142,18 +134,18 @@ function ChartTooltip({ active, payload, label }: any) {
   );
 }
 
-// ── Body event timeline item ───────────────────────────────────────────────
 function EventItem({ event }: { event: BodyEvent }) {
+  const t = useT();
   const level = SEVERITY_LEVEL[event.severity] ?? 'normal';
   const cfg = levelCfg[level];
-  const time = new Date(event.created_at).toLocaleTimeString('ko-KR', {
+  const time = new Date(event.created_at).toLocaleTimeString(undefined, {
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   });
   return (
     <div className="flex items-center gap-3 py-3 px-4 border-b border-[#F8FAFC] last:border-0">
       <div className="w-1.5 h-8 rounded-full flex-shrink-0" style={{ background: cfg.color }} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-bold text-[#0F172A] truncate">{BODY_STATE_KO[event.state] ?? event.state}</p>
+        <p className="text-sm font-bold text-[#0F172A] truncate">{t(bodyStateKey(event.state))}</p>
         <p className="text-[11px] text-[#94A3B8] mt-0.5">{time}</p>
       </div>
       <div className="text-right flex-shrink-0">
@@ -164,8 +156,8 @@ function EventItem({ event }: { event: BodyEvent }) {
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────
 export default function AnalysisPage() {
+  const t = useT();
   const [data, setData] = useState<DataPoint[]>([]);
   const [isLive, setIsLive] = useState(true);
   const [bodyLevel, setBodyLevel] = useState<StatusLevel>('normal');
@@ -180,20 +172,18 @@ export default function AnalysisPage() {
     })));
   }, []);
 
-  // body broadcast
   useEffect(() => {
     const supabase = createClient();
     const ch = supabase.channel('body-state-analysis')
       .on('broadcast', { event: 'body-state' }, ({ payload }) => {
         const s = payload?.severity as string;
         setBodyLevel(s === 'high' ? 'danger' : s === 'medium' ? 'warning' : 'normal');
-        if (payload?.state) setLastBodyState(BODY_STATE_KO[payload.state] ?? payload.state);
+        if (payload?.state) setLastBodyState(t(bodyStateKey(payload.state)));
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [t]);
 
-  // body_events realtime
   useEffect(() => {
     const supabase = createClient();
     supabase.from('body_events')
@@ -207,13 +197,12 @@ export default function AnalysisPage() {
         const ev = row as BodyEvent;
         setBodyEvents(prev => [ev, ...prev].slice(0, 15));
         setBodyLevel(SEVERITY_LEVEL[ev.severity] ?? 'normal');
-        setLastBodyState(BODY_STATE_KO[ev.state] ?? ev.state);
+        setLastBodyState(t(bodyStateKey(ev.state)));
       })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [t]);
 
-  // face_metrics polling
   useEffect(() => {
     if (!isLive) { if (intervalRef.current) clearInterval(intervalRef.current); return; }
     const supabase = createClient();
@@ -246,11 +235,10 @@ export default function AnalysisPage() {
   return (
     <div className="flex flex-col gap-5 fade-in pb-2">
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[22px] font-black text-[#0F172A] tracking-tight">분석</h1>
-          <p className="text-xs text-[#94A3B8] mt-0.5 font-medium">실시간 · 최근 30초</p>
+          <h1 className="text-[22px] font-black text-[#0F172A] tracking-tight">{t('analysis')}</h1>
+          <p className="text-xs text-[#94A3B8] mt-0.5 font-medium">{t('realtimeRecent30s')}</p>
         </div>
         <button
           onClick={() => setIsLive(v => !v)}
@@ -265,30 +253,27 @@ export default function AnalysisPage() {
         </button>
       </div>
 
-      {/* Face + Body status */}
       <div className="flex gap-3">
-        <StatusCard level={faceLevel} title="얼굴" sub="Face CV" />
-        <StatusCard level={bodyLevel} title="신체" sub={lastBodyState} />
+        <StatusCard level={faceLevel} title={t('face')} sub="Face CV" />
+        <StatusCard level={bodyLevel} title={t('body')} sub={lastBodyState} />
       </div>
 
-      {/* Gauges */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm px-4 py-5">
-        <p className="text-[11px] font-bold uppercase tracking-widest text-[#CBD5E1] mb-5">얼굴 바이오메트릭</p>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-[#CBD5E1] mb-5">{t('faceBiometrics')}</p>
         <div className="flex justify-around">
-          <Gauge value={cur.redness}     color="#f87171" label="홍조" />
-          <Gauge value={1 - cur.paleness} color="#94a3b8" label="창백" />
-          <Gauge value={cur.eye_closure} color="#fbbf24" label="눈 감김" />
+          <Gauge value={cur.redness}     color="#f87171" label={t('redness')} />
+          <Gauge value={1 - cur.paleness} color="#94a3b8" label={t('paleness')} />
+          <Gauge value={cur.eye_closure} color="#fbbf24" label={t('eyeClosure')} />
         </div>
       </div>
 
-      {/* Chart */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm p-5">
         <div className="flex items-center justify-between mb-4">
-          <p className="text-sm font-bold text-[#0F172A]">30초 위험도 추이</p>
+          <p className="text-sm font-bold text-[#0F172A]">{t('riskTrend30s')}</p>
           <div className="flex items-center gap-3 text-[10px] text-[#CBD5E1] font-semibold">
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#a78bfa] inline-block rounded" />위험도</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#f87171] inline-block rounded" />홍조</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#fbbf24] inline-block rounded" />눈감김</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#a78bfa] inline-block rounded" />{t('riskScore')}</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#f87171] inline-block rounded" />{t('redness')}</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-[#fbbf24] inline-block rounded" />{t('eyeClosed')}</span>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={180}>
@@ -298,7 +283,7 @@ export default function AnalysisPage() {
             <YAxis domain={[0.8, 3.2]} ticks={[1, 2, 3]} tick={{ fontSize: 10, fill: '#CBD5E1' }} axisLine={false} tickLine={false} />
             <ReferenceLine y={1.5} stroke="#F59E0B" strokeDasharray="4 4" strokeOpacity={0.35} />
             <ReferenceLine y={2.5} stroke="#EF4444" strokeDasharray="4 4" strokeOpacity={0.35} />
-            <Tooltip content={<ChartTooltip />} />
+            <Tooltip content={(props: any) => <ChartTooltip {...props} t={t} />} />
             <Line isAnimationActive={false} type="monotone" dataKey="face"        stroke="#a78bfa" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#a78bfa' }} />
             <Line isAnimationActive={false} type="monotone" dataKey="redness"     stroke="#f87171" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
             <Line isAnimationActive={false} type="monotone" dataKey="eye_closure" stroke="#fbbf24" strokeWidth={1.5} dot={false} strokeDasharray="4 3" />
@@ -306,14 +291,13 @@ export default function AnalysisPage() {
         </ResponsiveContainer>
       </div>
 
-      {/* Body events */}
       <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
         <div className="px-4 py-3.5 border-b border-[#F1F5F9] flex items-center justify-between">
-          <p className="text-sm font-bold text-[#0F172A]">신체 이벤트</p>
-          <span className="text-[10px] font-bold text-[#CBD5E1] uppercase tracking-widest">최근 {bodyEvents.length}건</span>
+          <p className="text-sm font-bold text-[#0F172A]">{t('bodyEvents')}</p>
+          <span className="text-[10px] font-bold text-[#CBD5E1] uppercase tracking-widest">{t('recentCount', bodyEvents.length)}</span>
         </div>
         {bodyEvents.length === 0 ? (
-          <div className="py-10 text-center text-sm text-[#CBD5E1]">이벤트 없음</div>
+          <div className="py-10 text-center text-sm text-[#CBD5E1]">{t('noEvents')}</div>
         ) : (
           bodyEvents.map(ev => <EventItem key={ev.id} event={ev} />)
         )}

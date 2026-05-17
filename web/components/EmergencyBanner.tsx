@@ -1,25 +1,21 @@
 'use client';
 
 import { PhoneCall, X, AlertTriangle } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 interface Props {
   type: 'stroke' | 'heatstroke';
   onDismiss: () => void;
 }
 
-const CONFIG = {
-  stroke: {
-    label: '뇌졸중(Stroke) 감지',
-    desc: '신체에서 뇌졸중 증상이 감지되었습니다. 즉시 응급 조치가 필요합니다.',
-  },
-  heatstroke: {
-    label: '열사병(Heat Stroke) 감지',
-    desc: '위험한 체온 상승이 감지되었습니다. 즉시 응급 조치가 필요합니다.',
-  },
-};
+const CFG = {
+  stroke:     { labelKey: 'strokeDetected', descKey: 'strokeDesc' },
+  heatstroke: { labelKey: 'heatstrokeDetected', descKey: 'heatstrokeDesc' },
+} as const;
 
 export default function EmergencyBanner({ type, onDismiss }: Props) {
-  const cfg = CONFIG[type];
+  const t = useT();
+  const cfg = CFG[type];
 
   return (
     <div className="slide-down fixed top-0 left-0 right-0 z-[100] bg-[#EF4444] text-white shadow-2xl">
@@ -29,8 +25,8 @@ export default function EmergencyBanner({ type, onDismiss }: Props) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-sm blink">🚨 {cfg.label}</p>
-          <p className="text-xs text-red-100 truncate">{cfg.desc}</p>
+          <p className="font-bold text-sm blink">🚨 {t(cfg.labelKey)}</p>
+          <p className="text-xs text-red-100 truncate">{t(cfg.descKey)}</p>
         </div>
 
         <a
@@ -38,7 +34,7 @@ export default function EmergencyBanner({ type, onDismiss }: Props) {
           className="flex items-center gap-2 bg-white text-[#EF4444] font-bold text-sm px-4 py-2 rounded-full hover:bg-red-50 transition-colors shrink-0"
         >
           <PhoneCall size={16} />
-          119 응급 전화
+          {t('sosEmergencyCall')}
         </a>
 
         <button

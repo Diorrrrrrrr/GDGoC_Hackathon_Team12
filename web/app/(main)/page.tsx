@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import type { StatusLevel } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
 import { Phone, X } from 'lucide-react';
+import { useT } from '@/lib/i18n';
 
 const AgoraViewer = dynamic(() => import('@/components/AgoraViewer'), { ssr: false });
 const AgoraBodyViewer = dynamic(() => import('@/components/AgoraBodyViewer'), { ssr: false });
@@ -49,6 +50,7 @@ function metricsToLevel(redness: number, paleness: number, eye_closure: number):
 }
 
 function SosBanner({ onDismiss }: { onDismiss: () => void }) {
+  const t = useT();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="bg-[#1a0000] border-2 border-[#EF4444] rounded-3xl p-8 mx-6 flex flex-col items-center gap-5 shadow-[0_0_60px_rgba(239,68,68,0.5)]">
@@ -56,23 +58,23 @@ function SosBanner({ onDismiss }: { onDismiss: () => void }) {
           <Phone size={28} className="text-white" />
         </div>
         <div className="text-center">
-          <p className="text-[#f87171] text-xs font-bold tracking-widest uppercase mb-1">위험 감지</p>
-          <p className="text-white text-xl font-bold">이상 상태가 감지되었습니다</p>
-          <p className="text-white/60 text-sm mt-1">즉시 확인 또는 응급 연락이 필요합니다</p>
+          <p className="text-[#f87171] text-xs font-bold tracking-widest uppercase mb-1">{t('sosDangerDetected')}</p>
+          <p className="text-white text-xl font-bold">{t('sosAbnormalState')}</p>
+          <p className="text-white/60 text-sm mt-1">{t('sosNeedsCheck')}</p>
         </div>
         <a
           href="tel:119"
           className="w-full py-4 bg-[#EF4444] hover:bg-[#dc2626] rounded-2xl text-white font-bold text-lg text-center flex items-center justify-center gap-2 transition-colors"
         >
           <Phone size={20} />
-          119 응급 전화
+          {t('sosEmergencyCall')}
         </a>
         <button
           onClick={onDismiss}
           className="flex items-center gap-1.5 text-white/40 text-sm hover:text-white/70 transition-colors"
         >
           <X size={14} />
-          닫기
+          {t('close')}
         </button>
       </div>
     </div>
@@ -80,6 +82,7 @@ function SosBanner({ onDismiss }: { onDismiss: () => void }) {
 }
 
 function CamCard({ title, subtitle, level, live, body }: { title: string; subtitle: string; level: StatusLevel; live?: boolean; body?: boolean }) {
+  const t = useT();
   const th = camTheme[level];
   return (
     <div className={`relative rounded-2xl overflow-hidden bg-gradient-to-br ${th.gradient} ${th.glow} transition-all duration-700`}>
@@ -145,7 +148,7 @@ function CamCard({ title, subtitle, level, live, body }: { title: string; subtit
 
         <div className="flex items-center gap-2 mt-3">
           <div className="w-1.5 h-1.5 rounded-full" style={{ background: th.dot, boxShadow: `0 0 8px ${th.dot}` }} />
-          <span className="text-white/50 text-xs">AI 분석 중</span>
+          <span className="text-white/50 text-xs">{t('aiAnalyzing')}</span>
         </div>
       </div>
     </div>
@@ -153,6 +156,7 @@ function CamCard({ title, subtitle, level, live, body }: { title: string; subtit
 }
 
 export default function MonitorPage() {
+  const t = useT();
   const [faceLevel, setFaceLevel] = useState<StatusLevel>('normal');
   const [bodyLevel, setBodyLevel] = useState<StatusLevel>('normal');
   const [showSos, setShowSos] = useState(false);
@@ -201,7 +205,6 @@ export default function MonitorPage() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // SOS: faceLevel 또는 bodyLevel danger 5초 지속 시 119 버튼
   useEffect(() => {
     if (faceLevel === 'danger') {
       if (dangerStartRef.current === null) {
@@ -211,7 +214,7 @@ export default function MonitorPage() {
       if (!sosDismissedRef.current) {
         const remaining = 5000 - (Date.now() - dangerStartRef.current!);
         if (remaining <= 0) { setShowSos(true); }
-        else { const t = setTimeout(() => setShowSos(true), remaining); return () => clearTimeout(t); }
+        else { const tm = setTimeout(() => setShowSos(true), remaining); return () => clearTimeout(tm); }
       }
     } else {
       dangerStartRef.current = null;
@@ -228,7 +231,7 @@ export default function MonitorPage() {
       if (!sosDismissedRef.current) {
         const remaining = 5000 - (Date.now() - bodyDangerStartRef.current!);
         if (remaining <= 0) { setShowSos(true); }
-        else { const t = setTimeout(() => setShowSos(true), remaining); return () => clearTimeout(t); }
+        else { const tm = setTimeout(() => setShowSos(true), remaining); return () => clearTimeout(tm); }
       }
     } else {
       bodyDangerStartRef.current = null;
@@ -240,8 +243,8 @@ export default function MonitorPage() {
     <>
       {showSos && <SosBanner onDismiss={() => { setShowSos(false); sosDismissedRef.current = true; }} />}
       <div className="fade-in flex flex-col gap-4">
-        <CamCard title="Body Camera" subtitle="신체 모니터링" level={bodyLevel} live body />
-        <CamCard title="Face Camera" subtitle="얼굴 모니터링" level={faceLevel} live />
+        <CamCard title="Body Camera" subtitle={t('bodyMonitoring')} level={bodyLevel} live body />
+        <CamCard title="Face Camera" subtitle={t('faceMonitoring')} level={faceLevel} live />
       </div>
     </>
   );

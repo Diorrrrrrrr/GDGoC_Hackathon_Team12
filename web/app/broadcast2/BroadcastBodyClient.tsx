@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { createClient } from '@/lib/supabase/client';
+import { useT } from '@/lib/i18n';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
@@ -527,8 +528,9 @@ export default function BroadcastBodyClient() {
   const supabaseRef = useRef(createClient());
   const broadcastRef = useRef(createClient().channel('body-state'));
 
+  const t = useT();
   const [broadcasting, setBroadcasting] = useState(false);
-  const [status, setStatus] = useState('대기 중');
+  const [statusKey, setStatusKey] = useState<'waiting' | 'connecting' | 'broadcasting' | 'broadcastEnded'>('waiting');
   const [bodyState, setBodyState] = useState<BodyState>('NORMAL');
 
   // Init MediaPipe PoseLandmarker
@@ -581,7 +583,7 @@ export default function BroadcastBodyClient() {
   }
 
   async function startBroadcast() {
-    setStatus('연결 중...');
+    setStatusKey('connecting');
     const { data: { session } } = await supabaseRef.current.auth.getSession();
     userIdRef.current = session?.user?.id ?? '00000000-0000-0000-0000-000000000001';
 
@@ -657,11 +659,11 @@ export default function BroadcastBodyClient() {
       await client.join(APP_ID, BODY_CHANNEL, BODY_TOKEN, null);
       await client.publish([videoTrack]);
     } catch (e) {
-      console.warn('[Agora] 스트리밍 연결 실패 (CV는 정상 동작):', e);
+      console.warn('[Agora] streaming connection failed (CV still operational):', e);
     }
 
     setBroadcasting(true);
-    setStatus('방송 중');
+    setStatusKey('broadcasting');
   }
 
   async function stopBroadcast() {
@@ -673,7 +675,7 @@ export default function BroadcastBodyClient() {
     }
     await clientRef.current?.leave();
     setBroadcasting(false);
-    setStatus('방송 종료');
+    setStatusKey('broadcastEnded');
   }
 
   useEffect(() => () => { stopBroadcast(); }, []);
@@ -682,7 +684,7 @@ export default function BroadcastBodyClient() {
 
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col items-center justify-center gap-6 p-6">
-      <div className="text-white text-xl font-bold">📡 신체 방송 송출 (Body CV)</div>
+      <div className="text-white text-xl font-bold">{t('bodyBroadcastTitle')}</div>
 
       <div className="relative w-full max-w-2xl aspect-video bg-black rounded-2xl overflow-hidden border border-white/10">
         {/* hidden video: webcam source for MediaPipe */}
@@ -691,7 +693,7 @@ export default function BroadcastBodyClient() {
         <canvas ref={canvasRef} className="w-full h-full object-cover" />
         {!broadcasting && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-white/30 text-sm">방송 시작 후 미리보기가 표시됩니다</span>
+            <span className="text-white/30 text-sm">{t('previewAfterStart')}</span>
           </div>
         )}
       </div>
@@ -711,7 +713,7 @@ export default function BroadcastBodyClient() {
 
       <div className="flex items-center gap-2">
         <span className={`w-2 h-2 rounded-full ${broadcasting ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`} />
-        <span className="text-white/70 text-sm">{status}</span>
+        <span className="text-white/70 text-sm">{t(statusKey)}</span>
       </div>
 
       {!broadcasting ? (
@@ -719,14 +721,14 @@ export default function BroadcastBodyClient() {
           onClick={startBroadcast}
           className="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all"
         >
-          방송 시작
+          {t('startBroadcast')}
         </button>
       ) : (
         <button
           onClick={stopBroadcast}
           className="px-8 py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-xl transition-all"
         >
-          방송 종료
+          {t('stopBroadcast')}
         </button>
       )}
     </div>

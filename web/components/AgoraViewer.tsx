@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { createClient } from '@/lib/supabase/client';
+import { useT } from '@/lib/i18n';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
 const TOKEN = process.env.NEXT_PUBLIC_AGORA_TOKEN!;
@@ -18,6 +19,7 @@ interface Metrics {
 }
 
 export default function AgoraViewer() {
+  const t = useT();
   const videoRef = useRef<HTMLDivElement>(null);
   const [connected, setConnected] = useState(false);
   const clientRef = useRef<ReturnType<typeof AgoraRTC.createClient> | null>(null);
@@ -42,11 +44,9 @@ export default function AgoraViewer() {
     return () => { client.leave(); };
   }, []);
 
-  // Supabase Realtime: INSERT 시 서버가 push (폴링 없음 → 50명 동시 접속도 부하 없음)
   useEffect(() => {
     const supabase = createClient();
 
-    // 초기값: 가장 최근 row 한 번만 fetch
     supabase
       .from('face_metrics')
       .select('redness, paleness, eye_closure, face_detected')
@@ -54,7 +54,6 @@ export default function AgoraViewer() {
       .limit(1)
       .then(({ data }) => { if (data && data.length > 0) setMetrics(data[0] as Metrics); });
 
-    // 이후 INSERT마다 push 수신
     const channel = supabase
       .channel('face_metrics_live')
       .on(
@@ -71,7 +70,6 @@ export default function AgoraViewer() {
     <div className="relative w-full h-full">
       <div ref={videoRef} className="w-full h-full" />
 
-      {/* 수치 오버레이 — Python CV 스타일 */}
       {connected && (
         <div className="absolute inset-0 pointer-events-none" style={{ fontFamily: 'monospace' }}>
           <div className="absolute top-2 left-2 flex flex-col gap-0.5">
@@ -99,7 +97,6 @@ export default function AgoraViewer() {
             ))}
           </div>
 
-          {/* REC 표시 */}
           <div className="absolute top-2 right-2 flex items-center gap-1">
             <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
             <span style={{ color: '#fff', fontSize: '11px', fontWeight: 'bold', textShadow: OUTLINE }}>REC</span>
@@ -110,7 +107,7 @@ export default function AgoraViewer() {
       {!connected && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
           <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          <span className="text-white/40 text-xs">신호 대기 중...</span>
+          <span className="text-white/40 text-xs">{t('waitingSignal')}</span>
         </div>
       )}
     </div>

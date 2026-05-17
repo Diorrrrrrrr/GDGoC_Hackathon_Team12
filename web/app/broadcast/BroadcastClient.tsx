@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { createClient } from '@/lib/supabase/client';
+import { useT } from '@/lib/i18n';
 
 const APP_ID = process.env.NEXT_PUBLIC_AGORA_APP_ID!;
 const TOKEN = process.env.NEXT_PUBLIC_AGORA_TOKEN!;
@@ -40,7 +41,10 @@ function calcEyeClosure(landmarks: { x: number; y: number }[]): number {
   return +Math.min(1, Math.max(0, 1 - ((leftEAR + rightEAR) / 2) / 0.25)).toFixed(3);
 }
 
+type StatusKey = 'waiting' | 'connecting' | 'broadcasting' | 'broadcastEnded';
+
 export default function BroadcastClient() {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const analysisRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const clientRef = useRef<ReturnType<typeof AgoraRTC.createClient> | null>(null);
@@ -48,7 +52,7 @@ export default function BroadcastClient() {
   const userIdRef = useRef<string | null>(null);
   const supabaseRef = useRef(createClient());
   const [broadcasting, setBroadcasting] = useState(false);
-  const [status, setStatus] = useState('대기 중');
+  const [statusKey, setStatusKey] = useState<StatusKey>('waiting');
   const [metrics, setMetrics] = useState({ redness: 0, paleness: 0, eye_closure: 0, face_detected: false });
 
   useEffect(() => {
@@ -97,7 +101,7 @@ export default function BroadcastClient() {
   }, []);
 
   async function startBroadcast() {
-    setStatus('연결 중...');
+    setStatusKey('connecting');
 
     const { data: { session } } = await supabaseRef.current.auth.getSession();
     userIdRef.current = session?.user?.id ?? '00000000-0000-0000-0000-000000000001';
@@ -119,7 +123,7 @@ export default function BroadcastClient() {
     await client.publish([audioTrack, videoTrack]);
 
     setBroadcasting(true);
-    setStatus('방송 중');
+    setStatusKey('broadcasting');
     analysisRef.current = setInterval(runAnalysis, 1000);
   }
 
@@ -127,25 +131,25 @@ export default function BroadcastClient() {
     if (analysisRef.current) clearInterval(analysisRef.current);
     const video = videoRef.current;
     if (video) {
-      (video.srcObject as MediaStream)?.getTracks().forEach(t => t.stop());
+      (video.srcObject as MediaStream)?.getTracks().forEach(tr => tr.stop());
       video.srcObject = null;
     }
     await clientRef.current?.leave();
     setBroadcasting(false);
-    setStatus('방송 종료');
+    setStatusKey('broadcastEnded');
   }
 
   useEffect(() => () => { stopBroadcast(); }, []);
 
   return (
     <div className="min-h-screen bg-[#0f1117] flex flex-col items-center justify-center gap-6 p-6">
-      <div className="text-white text-xl font-bold">📡 방송 송출</div>
+      <div className="text-white text-xl font-bold">{t('broadcastTitle')}</div>
 
       <div className="relative w-full max-w-2xl aspect-video bg-black rounded-2xl overflow-hidden border border-white/10">
         <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
         {!broadcasting && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-white/30 text-sm">방송 시작 후 미리보기가 표시됩니다</span>
+            <span className="text-white/30 text-sm">{t('previewAfterStart')}</span>
           </div>
         )}
       </div>
@@ -153,9 +157,9 @@ export default function BroadcastClient() {
       {broadcasting && (
         <div className="w-full max-w-2xl bg-white/5 rounded-2xl p-4 flex gap-6">
           {[
-            { label: '홍조', value: metrics.redness, color: '#f87171' },
-            { label: '창백', value: metrics.paleness, color: '#94a3b8' },
-            { label: '눈감김', value: metrics.eye_closure, color: '#fbbf24' },
+            { label: t('redness'), value: metrics.redness, color: '#f87171' },
+            { label: t('paleness'), value: metrics.paleness, color: '#94a3b8' },
+            { label: t('eyeClosed'), value: metrics.eye_closure, color: '#fbbf24' },
           ].map(({ label, value, color }) => (
             <div key={label} className="flex-1 flex flex-col gap-1.5">
               <div className="flex justify-between text-xs text-white/60">
@@ -171,16 +175,16 @@ export default function BroadcastClient() {
 
       <div className="flex items-center gap-2">
         <span className={`w-2 h-2 rounded-full ${broadcasting ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`} />
-        <span className="text-white/70 text-sm">{status}</span>
+        <span className="text-white/70 text-sm">{t(statusKey)}</span>
       </div>
 
       {!broadcasting ? (
         <button onClick={startBroadcast} className="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-all">
-          방송 시작
+          {t('startBroadcast')}
         </button>
       ) : (
         <button onClick={stopBroadcast} className="px-8 py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-xl transition-all">
-          방송 종료
+          {t('stopBroadcast')}
         </button>
       )}
     </div>
